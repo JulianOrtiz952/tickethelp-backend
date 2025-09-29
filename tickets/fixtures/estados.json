@@ -1,0 +1,52 @@
+[
+  {
+    "model": "tickets.estado",
+    "pk": 1,
+    "fields": {
+      "codigo": "open",
+      "nombre": "Abierto",
+      "es_activo": true,
+      "es_final": false
+    }
+  },
+  {
+    "model": "tickets.estado",
+    "pk": 2,
+    "fields": {
+      "codigo": "diagnosis",
+      "nombre": "En diagnóstico",
+      "es_activo": true,
+      "es_final": false
+    }
+  },
+  {
+    "model": "tickets.estado",
+    "pk": 3,
+    "fields": {
+      "codigo": "in_repair",
+      "nombre": "En reparación",
+      "es_activo": true,
+      "es_final": false
+    }
+  },
+  {
+    "model": "tickets.estado",
+    "pk": 4,
+    "fields": {
+      "codigo": "closed",
+      "nombre": "Finalizado",
+      "es_activo": false,
+      "es_final": true
+    }
+  },
+  {
+    "model": "tickets.estado",
+    "pk": 5,
+    "fields": {
+      "codigo": "canceled",
+      "nombre": "Cancelado",
+      "es_activo": false,
+      "es_final": true
+    }
+  }
+]

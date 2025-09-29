@@ -23,6 +23,21 @@ class UserViewSet(viewsets.ModelViewSet):
     def get_serializer_class(self):
         return UserCreateSerializer if self.action in ('create', 'update', 'partial_update') else UserReadSerializer
 
+    # Para crear usuarios
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+        headers = self.get_success_headers(serializer.data)
+        return Response(
+            {
+                "message": "Usuario creado exitosamente"
+            },
+            status=status.HTTP_201_CREATED,
+            headers=headers
+        )
+
+    # Para eliminar usuarios
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
         if instance.has_active_tickets():
@@ -45,7 +60,6 @@ class UserViewSet(viewsets.ModelViewSet):
         return Response({"detail": "Usuario desactivado."}, status=status.HTTP_200_OK)
 class BaseRoleViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAdmin]
-
     def get_serializer_class(self):
         return UserCreateSerializer if self.action in ('create', 'update', 'partial_update') else UserReadSerializer
     def get_queryset(self):

@@ -3,12 +3,17 @@ from django.contrib.auth import get_user_model
 from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from rest_framework import generics
+from django.shortcuts import get_object_or_404
 
 from .serializers import (
     UserReadSerializer,
     UserCreateSerializer,
     UserDeleteSerializer,  
-    )
+    UserUpdateSerializer,
+    ChangePasswordSerializer,
+    ChangePasswordByIdSerializer
+)
 User = get_user_model()
 
 class IsAdmin(permissions.BasePermission):
@@ -60,3 +65,54 @@ class TechnicianViewSet(BaseRoleViewSet):
     ROLE = 'TECH'
 class ClientViewSet(BaseRoleViewSet):
     ROLE = 'CLIENT'
+
+class UserUpdateView(generics.RetrieveUpdateAPIView):
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class = UserUpdateSerializer
+
+    def get_object(self):
+        return self.request.user
+    
+    def patch(self, request, *args, **kwargs):
+        resp = super().patch(request, *args, **kwargs)
+        if resp.status_code in (200, 202):
+            data = dict(resp.data) if isinstance(resp.data, dict) else {}
+            data["message"] = "Datos actualizados correctamente."
+            return Response(data, status=status.HTTP_200_OK)
+        return resp
+
+class ChangePasswordView(generics.GenericAPIView):
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class = ChangePasswordSerializer
+
+    def post(self, request, *args, **kwargs):
+        ser = self.get_serializer(data=request.data, context={'request': request})
+        ser.is_valid(raise_exception=True)
+        ser.save()
+        return Response({"message": "Contraseña actualizada correctamente, vuelve a iniciar sesión."}, status=status.HTTP_200_OK)
+    
+class UserUpdateByIdView(generics.RetrieveUpdateAPIView):
+    permission_classes = [permissions.AllowAny]  # <- Habilitado solo para pruebas
+    serializer_class = UserUpdateSerializer
+    lookup_url_kwarg = 'pk'
+
+    def get_object(self):
+        return get_object_or_404(User, pk=self.kwargs.get(self.lookup_url_kwarg))
+
+    def patch(self, request, *args, **kwargs):
+        resp = super().patch(request, *args, **kwargs)
+        if resp.status_code in (200, 202):
+            data = dict(resp.data) if isinstance(resp.data, dict) else {}
+            data["message"] = "Datos actualizados correctamente."
+            return Response(data, status=status.HTTP_200_OK)
+        return resp
+    
+class ChangePasswordByIdView(generics.GenericAPIView):
+    permission_classes = [permissions.AllowAny]  # <- Habilitado solo para pruebas
+    serializer_class = ChangePasswordByIdSerializer
+    def post(self, request, pk, *args, **kwargs):
+        user_obj = get_object_or_404(User, pk=pk)
+        ser = self.get_serializer(data=request.data, context={'user': user_obj})
+        ser.is_valid(raise_exception=True)
+        ser.save()
+        return Response({"message": "Contraseña actualizada. Vuelve a iniciar sesión."}, status=status.HTTP_200_OK)

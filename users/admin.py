@@ -6,7 +6,7 @@ from .models import User, Admin as AdminProxy, Technician as TechnicianProxy, Cl
 class CustomUserCreationForm(UserCreationForm):
     class Meta(UserCreationForm.Meta):
         model = User
-        fields = ('email','first_name','last_name','number','role')
+        fields = ('document','email','first_name','last_name','number','role')
 
 class CustomUserChangeForm(UserChangeForm):
     class Meta:
@@ -19,10 +19,10 @@ class CustomUserAdmin(UserAdmin):
     form = CustomUserChangeForm
     model = User
 
-    list_display  = ('id','email','first_name','last_name','number','role','is_active','is_staff')
+    list_display  = ('document','email','first_name','last_name','number','role','is_active','is_staff')
     list_filter   = ('role','is_active','is_staff','is_superuser','groups')
     search_fields = ('email','first_name','last_name','name','lastName','number')
-    ordering      = ('id',)
+    ordering      = ('document',)
 
     fieldsets = (
         (None, {'fields': ('email','password')}),

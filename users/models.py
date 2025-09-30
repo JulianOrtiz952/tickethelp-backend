@@ -10,6 +10,7 @@ class User(AbstractUser):
         TECH   = 'TECH',   'Técnico'
         CLIENT = 'CLIENT', 'Cliente'
 
+    document = models.CharField(max_length=15, unique=True, primary_key=True)
     number    = models.CharField(max_length=15, blank=True, null=True)
     role      = models.CharField(max_length=20, choices=Role.choices, default=Role.CLIENT)
     is_active = models.BooleanField(default=True)

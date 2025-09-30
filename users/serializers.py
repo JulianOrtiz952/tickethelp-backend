@@ -6,14 +6,13 @@ User = get_user_model()
 
 # Serializer para crear usuarios
 class UserCreateSerializer(serializers.ModelSerializer):
-    email = serializers.EmailField(
-        validators=[UniqueValidator(queryset=User.objects.all(), message="correo ya registrado")]
-    )
+    email = serializers.EmailField()
+    document = serializers.CharField()
     password = serializers.CharField(write_only=True, min_length=8, required=True)
 
     class Meta:
         model  = User
-        fields = ['id', 'email', 'number', 'role', 'created_at', 'first_name', 'last_name', 'password']
+        fields = ['document', 'email', 'number', 'role', 'created_at', 'first_name', 'last_name', 'password']
 
     def create(self, validated_data):
         password = validated_data.pop('password')
@@ -22,11 +21,26 @@ class UserCreateSerializer(serializers.ModelSerializer):
         user.save()
         return user
 
+    def validate(self, attrs):
+        email = attrs.get('email')
+        document = attrs.get('document')
+        if email and User.objects.filter(email=email).exists():
+            raise serializers.ValidationError({
+                'email': f"El correo '{email}' ya está registrado."
+            })
+        
+        if document and User.objects.filter(document=document).exists():
+            raise serializers.ValidationError({
+                'document': f"El documento '{document}' ya está registrado."
+            })
+
+        return attrs
+
 # Serializer para leer usuarios
 class UserReadSerializer(serializers.ModelSerializer):
     class Meta:
         model  = User
-        fields = ['id','email','number','role','is_active','date_joined','first_name','last_name']
+        fields = ['document','email','number','role','is_active','date_joined','first_name','last_name']
         
 # Serializer para eliminar usuarios
 class UserDeleteSerializer(serializers.ModelSerializer):
@@ -35,7 +49,7 @@ class UserDeleteSerializer(serializers.ModelSerializer):
 
     class Meta:
         model  = User
-        fields = ['id','email','number','role','is_active','created_at','first_name','last_name','active_tickets']
+        fields = ['document','email','number','role','is_active','created_at','first_name','last_name','active_tickets']
 
     def get_active_tickets(self, obj):
         return obj.has_active_tickets()

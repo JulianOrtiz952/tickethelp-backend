@@ -15,8 +15,9 @@ class UserCreateSerializer(serializers.ModelSerializer):
 
     class Meta:
         model  = User
-        fields = ['document', 'email', 'number', 'role', 'created_at', 'first_name', 'last_name', 'password']
+        fields = ['document', 'email', 'number', 'role', 'first_name', 'last_name', 'password']
 
+    # Crea el usuario con la contraseña hasheada
     def create(self, validated_data):
         password = validated_data.pop('password')
         user = User(**validated_data)
@@ -24,6 +25,7 @@ class UserCreateSerializer(serializers.ModelSerializer):
         user.save()
         return user
 
+    # Valida que el email y documento sean únicos
     def validate(self, attrs):
         email = attrs.get('email')
         document = attrs.get('document')
@@ -52,7 +54,7 @@ class UserDeleteSerializer(serializers.ModelSerializer):
 
     class Meta:
         model  = User
-        fields = ['document','email','number','role','is_active','created_at','first_name','last_name','active_tickets']
+        fields = ['document','email','number','role','is_active', 'first_name','last_name','active_tickets']
 
     def get_active_tickets(self, obj):
         return obj.has_active_tickets()

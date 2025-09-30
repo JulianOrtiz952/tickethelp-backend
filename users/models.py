@@ -1,31 +1,6 @@
 from django.db import models
-from django.contrib.auth.models import AbstractUser, UserManager as DjangoUserManager
-class CustomUserManager(DjangoUserManager):
-    use_in_migrations = True
-
-    def create_user(self, email, password=None, **extra_fields):
-        if not email:
-            raise ValueError("El email es obligatorio")
-        email = self.normalize_email(email)
-        user = self.model(email=email, **extra_fields)
-        if password:
-            user.set_password(password)
-        else:
-            user.set_unusable_password()
-        user.save(using=self._db)
-        return user
-
-    def create_superuser(self, email, password=None, **extra_fields):
-        extra_fields.setdefault("is_staff", True)
-        extra_fields.setdefault("is_superuser", True)
-        extra_fields.setdefault("is_active", True)
-
-        if extra_fields.get("is_staff") is not True:
-            raise ValueError("Superuser debe tener is_staff=True.")
-        if extra_fields.get("is_superuser") is not True:
-            raise ValueError("Superuser debe tener is_superuser=True.")
-
-        return self.create_user(email, password, **extra_fields)
+from django.contrib.auth.models import AbstractUser
+from .managers import CustomUserManager
 class User(AbstractUser):
     username = None
     email = models.EmailField(unique=True)
@@ -44,12 +19,11 @@ class User(AbstractUser):
     REQUIRED_FIELDS = []
     objects = CustomUserManager()
 
-    #def has_active_tickets(self) -> bool:
-        #from django.db.models import Q
-        #from tickets.models import Ticket
-        #return Ticket.objects.filter(
-            #Q(assigned_to=self) | Q(created_by=self)
-        #).exclude(status=Ticket.Status.CLOSED).exists()
+    def has_active_tickets(self):
+        from tickets.models import Ticket
+        return Ticket.objects.filter(
+            models.Q(tecnico=self) | models.Q(cliente=self) | models.Q(administrador=self)
+        ).exclude(estado__codigo__in=['closed', 'canceled']).exists()
 
 class _RoleQS(models.Manager):
     ROLE = None

@@ -1,5 +1,5 @@
 from rest_framework.routers import DefaultRouter
-from .views import UserViewSet, AdminViewSet, TechnicianViewSet, ClientViewSet, UserUpdateView, ChangePasswordView, ChangePasswordByIdView, UserUpdateByIdView
+from .views import UserViewSet, AdminViewSet, TechnicianViewSet, ClientViewSet, UserUpdateView, ChangePasswordView, ChangePasswordByIdView, UserUpdateByIdView, get_client_by_document
 from django.urls import path, include
 
 router = DefaultRouter()
@@ -19,5 +19,8 @@ urlpatterns = [
      #Endpoint para las pruebas
     path('me/<int:pk>/', UserUpdateByIdView.as_view(), name='users-me-by-id'),
     path('me/change-password/<int:pk>/', ChangePasswordByIdView.as_view(), name='users-change-password-by-id'),
+    
+    # Endpoint para consultar cliente por documento
+    path('clients/<str:document>/', get_client_by_document, name='get-client-by-document'),
 
 ]

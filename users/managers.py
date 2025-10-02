@@ -1,5 +1,6 @@
 from django.contrib.auth.models import UserManager as DjangoUserManager
 
+# Manager custom para el modelo User para usar el email como username
 class CustomUserManager(DjangoUserManager):
     use_in_migrations = True
 

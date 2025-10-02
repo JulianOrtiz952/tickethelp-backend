@@ -2,18 +2,17 @@ from django.db import models
 from django.contrib.auth.models import AbstractUser
 from .managers import CustomUserManager
 class User(AbstractUser):
-    username = None
-    email = models.EmailField(unique=True)
-
     class Role(models.TextChoices):
         ADMIN  = 'ADMIN',  'Administrador'
         TECH   = 'TECH',   'Técnico'
         CLIENT = 'CLIENT', 'Cliente'
-
+    
+    username = None
+    email = models.EmailField(unique=True)
+    document = models.CharField(max_length=10, unique=True, primary_key=True)
     number    = models.CharField(max_length=15, blank=True, null=True)
     role      = models.CharField(max_length=20, choices=Role.choices, default=Role.CLIENT)
     is_active = models.BooleanField(default=True)
-    created_at = models.DateTimeField(auto_now_add=True)
 
     USERNAME_FIELD = 'email'
     REQUIRED_FIELDS = []
@@ -25,6 +24,7 @@ class User(AbstractUser):
             models.Q(tecnico=self) | models.Q(cliente=self) | models.Q(administrador=self)
         ).exclude(estado__codigo__in=['closed', 'canceled']).exists()
 
+# Maneja los managers para cada rol
 class _RoleQS(models.Manager):
     ROLE = None
     def get_queryset(self):

@@ -16,11 +16,13 @@ from .serializers import (
 )
 User = get_user_model()
 
+# Verifica si quien va hacer la acción es un administrador
 class IsAdmin(permissions.BasePermission):
     def has_permission(self, request, view) -> bool:
         user = request.user
         return bool(user and user.is_authenticated and (getattr(user, 'role', None) == 'ADMIN' or user.is_superuser))
 
+# Maneja las vistas para los usuarios
 class UserViewSet(viewsets.ModelViewSet):
     queryset = User.objects.all()
     permission_classes = [permissions.AllowAny] # Para probar los endpoints sin autenticación, quitar y colocar IsAdmin en producción
@@ -28,7 +30,7 @@ class UserViewSet(viewsets.ModelViewSet):
     def get_serializer_class(self):
         return UserCreateSerializer if self.action in ('create', 'update', 'partial_update') else UserReadSerializer
 
-    # Para crear usuarios
+    # Sirve para crear usuarios
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -42,7 +44,7 @@ class UserViewSet(viewsets.ModelViewSet):
             headers=headers
         )
 
-    # Para eliminar usuarios
+    # Sirve para eliminar usuarios
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
         if instance.has_active_tickets():
@@ -55,6 +57,7 @@ class UserViewSet(viewsets.ModelViewSet):
         self.perform_destroy(instance)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
+    # Sirve para desactivar usuarios en lugar de eliminarlos
     @action(detail=True, methods=['post'])
     def deactivate(self, request, pk=None):
         user = self.get_object()
@@ -63,6 +66,8 @@ class UserViewSet(viewsets.ModelViewSet):
         user.is_active = False
         user.save(update_fields=['is_active'])
         return Response({"detail": "Usuario desactivado."}, status=status.HTTP_200_OK)
+
+# Maneja las vistas para los roles específicos
 class BaseRoleViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAdmin]
     def get_serializer_class(self):
@@ -73,6 +78,8 @@ class BaseRoleViewSet(viewsets.ModelViewSet):
         serializer.save(role=self.ROLE)
     def perform_update(self, serializer):
         serializer.save(role=self.ROLE)
+
+# Vistas para cada rol
 class AdminViewSet(BaseRoleViewSet):
     ROLE = 'ADMIN'
 class TechnicianViewSet(BaseRoleViewSet):

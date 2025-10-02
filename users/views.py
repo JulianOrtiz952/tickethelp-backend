@@ -1,10 +1,11 @@
 # users/views.py
 from django.contrib.auth import get_user_model
 from rest_framework import viewsets, permissions, status
-from rest_framework.decorators import action
+from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework import generics
 from django.shortcuts import get_object_or_404
+from django.core.exceptions import ObjectDoesNotExist
 
 from .serializers import (
     UserReadSerializer,
@@ -69,7 +70,7 @@ class UserViewSet(viewsets.ModelViewSet):
 
 # Maneja las vistas para los roles específicos
 class BaseRoleViewSet(viewsets.ModelViewSet):
-    permission_classes = [IsAdmin]
+    permission_classes = [permissions.AllowAny]
     def get_serializer_class(self):
         return UserCreateSerializer if self.action in ('create', 'update', 'partial_update') else UserReadSerializer
     def get_queryset(self):
@@ -137,3 +138,42 @@ class ChangePasswordByIdView(generics.GenericAPIView):
         ser.is_valid(raise_exception=True)
         ser.save()
         return Response({"message": "Contraseña actualizada. Vuelve a iniciar sesión."}, status=status.HTTP_200_OK)
+
+# Función para consultar cliente por documento con manejo de error personalizado
+@api_view(['GET'])
+@permission_classes([permissions.AllowAny])  # Cambiar por IsAdmin en producción
+def get_client_by_document(request, document):
+    """
+    Consulta un cliente por su número de documento.
+    Si no existe, retorna un mensaje específico indicando que debe ser creado.
+    """
+    try:
+        # Intentar buscar el cliente por documento
+        client = User.objects.get(document=document, role=User.Role.CLIENT)
+        
+        # Si se encuentra, serializarlo y retornarlo
+        serializer = UserReadSerializer(client)
+        return Response({
+            "success": True,
+            "message": "Cliente encontrado exitosamente",
+            "data": serializer.data
+        }, status=status.HTTP_200_OK)
+        
+    except User.DoesNotExist:
+        # Si no existe el cliente, retornar mensaje específico
+        return Response({
+            "success": False,
+            "message": f"El cliente con documento {document} no existe en el sistema",
+            "suggestion": "Debe crear el cliente antes de continuar",
+            "code": "CLIENT_NOT_FOUND",
+            "data": None
+        }, status=status.HTTP_404_NOT_FOUND)
+        
+    except Exception as e:
+        # Manejo de otros errores inesperados
+        return Response({
+            "success": False,
+            "message": "Error interno del servidor",
+            "error": str(e),
+            "code": "INTERNAL_ERROR"
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

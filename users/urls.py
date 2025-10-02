@@ -4,10 +4,10 @@ from django.urls import path, include
 
 router = DefaultRouter()
 # Mapeo de rutas generales
-router.register('/users', UserViewSet, basename='user')
-router.register('/admins', AdminViewSet, basename='admin')
-router.register('/technicians', TechnicianViewSet, basename='technician')
-router.register('/clients', ClientViewSet, basename='client')
+router.register('users/', UserViewSet, basename='user')
+router.register('admins/', AdminViewSet, basename='admin')
+router.register('technicians/', TechnicianViewSet, basename='technician')
+router.register('clients/', ClientViewSet, basename='client')
 
 urlpatterns = [
     path('', include(router.urls)),

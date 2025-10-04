@@ -47,6 +47,11 @@ class UserReadSerializer(serializers.ModelSerializer):
         model  = User
         fields = ['document','email','number','role','is_active','date_joined','first_name','last_name']
         
+class UserDeactivateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model  = User
+        fields = ['document']
+        
 # Serializer para eliminar usuarios
 class UserDeleteSerializer(serializers.ModelSerializer):
     # Se debe verificar si el usuario tiene tickets activos antes de eliminarlo

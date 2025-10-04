@@ -12,6 +12,7 @@ from .serializers import (
     UserCreateSerializer,
     UserDeleteSerializer,  
     UserUpdateSerializer,
+    UserDeactivateSerializer,
     ChangePasswordSerializer,
     ChangePasswordByIdSerializer
 )
@@ -29,7 +30,13 @@ class UserViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.AllowAny] # Para probar los endpoints sin autenticación, quitar y colocar IsAdmin en producción
 
     def get_serializer_class(self):
-        return UserCreateSerializer if self.action in ('create', 'update', 'partial_update') else UserReadSerializer
+        if self.action == 'create':
+            return UserCreateSerializer
+        elif self.action == 'update':
+            return UserUpdateSerializer
+        elif self.action == 'deactivate':
+            return UserDeactivateSerializer
+        return UserReadSerializer
 
     # Sirve para crear usuarios
     def create(self, request, *args, **kwargs):
@@ -44,6 +51,16 @@ class UserViewSet(viewsets.ModelViewSet):
             status=status.HTTP_201_CREATED,
             headers=headers
         )
+        
+    # Sirve para actualizar usuarios
+    def update(self, request, *args, **kwargs):
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_update(serializer)
+        return Response({
+            "message": "Usuario actualizado exitosamente"
+        }, status=status.HTTP_200_OK)
 
     # Sirve para eliminar usuarios
     def destroy(self, request, *args, **kwargs):
@@ -58,15 +75,33 @@ class UserViewSet(viewsets.ModelViewSet):
         self.perform_destroy(instance)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
-    # Sirve para desactivar usuarios en lugar de eliminarlos
+    # Sirve para desactivar usuarios en vez de eliminarlos si tienen tickets activos
     @action(detail=True, methods=['post'])
     def deactivate(self, request, pk=None):
-        user = self.get_object()
-        if not user.is_active:
-            return Response({"detail": "El usuario ya estaba desactivado."}, status=status.HTTP_200_OK)
-        user.is_active = False
-        user.save(update_fields=['is_active'])
-        return Response({"detail": "Usuario desactivado."}, status=status.HTTP_200_OK)
+        try:
+            # Busca al usuario por su documento
+            user = self.get_object()  # Obtiene el usuario con pk
+            
+            if not user.is_active:
+                return Response({"detail": "El usuario ya estaba desactivado."}, status=status.HTTP_200_OK)
+
+            # Desactiva al usuario
+            user.is_active = False
+            user.save(update_fields=['is_active'])
+
+            return Response({
+                "detail": "Usuario desactivado.",
+                "user_info": {
+                    "document": user.document,
+                    "email": user.email,
+                    "first_name": user.first_name,
+                    "last_name": user.last_name,
+                    "is_active": user.is_active
+                }
+            }, status=status.HTTP_200_OK)
+
+        except User.DoesNotExist:
+            return Response({"detail": "Usuario no encontrado."}, status=status.HTTP_404_NOT_FOUND)
 
 # Maneja las vistas para los roles específicos
 class BaseRoleViewSet(viewsets.ModelViewSet):

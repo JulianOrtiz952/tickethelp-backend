@@ -116,3 +116,24 @@ class ChangePasswordByIdSerializer(serializers.Serializer):
         user.set_password(self.validated_data['new_password'])
         user.save(update_fields=['password'])
         return user
+    
+# ================ Admin ================
+class AdminUpdateUserSerializer (serializers.ModelSerializer):
+    
+    class Meta:
+        model = User
+        fields = ['document','email','number','role','is_active','first_name','last_name']
+        extra_kwargs = {
+            'document': {'required': True, 'allow_blank': False, 'max_length': 20},
+            'email': {'required': True, 'allow_blank': False, 'max_length': 254},
+            'role': {'required': True},
+            'is_active': {'required': True},
+            'first_name': {'required': True, 'allow_blank': False, 'max_length': 150},
+            'last_name': {'required': True, 'allow_blank': False, 'max_length': 150},
+            'number': {'required': True, 'allow_blank': False, 'max_length': 15},
+        }
+        
+    def validate_number(self, value):
+        if value and not re.fullmatch(r'^\+?\d{7,15}$', value):
+            raise serializers.ValidationError("Número de teléfono inválido.")
+        return value

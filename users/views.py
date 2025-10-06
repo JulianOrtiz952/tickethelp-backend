@@ -11,6 +11,7 @@ from .serializers import (
     UserCreateSerializer,
     UserDeleteSerializer,  
     UserUpdateSerializer,
+    AdminUpdateUserSerializer,
     ChangePasswordSerializer,
     ChangePasswordByIdSerializer
 )
@@ -47,15 +48,19 @@ class UserViewSet(viewsets.ModelViewSet):
     # Sirve para eliminar usuarios
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
+        user_data = UserReadSerializer(instance).data
         if instance.has_active_tickets():
             data = UserDeleteSerializer(instance).data
             return Response({
                 "detail": "No se puede eliminar porque tiene tickets activos. Puede desactivarlo.",
-                "code": "usuario_con_tickets_activos"
+                "code": "usuario_con_tickets_activos",
+                "User data:": user_data
             },
             status=status.HTTP_409_CONFLICT)
         self.perform_destroy(instance)
-        return Response(status=status.HTTP_204_NO_CONTENT)
+        return Response({
+            "Message": "Usuario eliminado correctamente"
+                },status=status.HTTP_204_NO_CONTENT)
 
     # Sirve para desactivar usuarios en lugar de eliminarlos
     @action(detail=True, methods=['post'])
@@ -66,10 +71,19 @@ class UserViewSet(viewsets.ModelViewSet):
         user.is_active = False
         user.save(update_fields=['is_active'])
         return Response({"detail": "Usuario desactivado."}, status=status.HTTP_200_OK)
+    # Sirve para activar el usuario de nuevo
+    @action(detail=True, methods=['post'])
+    def activate(self, request, pk=None):
+        user = self.get_object()
+        if user.is_active:
+            return Response({"detail": "El usuario ya estaba activado."}, status=status.HTTP_200_OK)
+        user.is_active = True
+        user.save(update_fields=['is_active'])
+        return Response({"detail": "Usuario activado."}, status=status.HTTP_200_OK)
 
 # Maneja las vistas para los roles específicos
 class BaseRoleViewSet(viewsets.ModelViewSet):
-    permission_classes = [IsAdmin]
+    permission_classes = [permissions.AllowAny] # Solo para pruebas, luego cambiar a IsAdmin
     def get_serializer_class(self):
         return UserCreateSerializer if self.action in ('create', 'update', 'partial_update') else UserReadSerializer
     def get_queryset(self):
@@ -137,3 +151,19 @@ class ChangePasswordByIdView(generics.GenericAPIView):
         ser.is_valid(raise_exception=True)
         ser.save()
         return Response({"message": "Contraseña actualizada. Vuelve a iniciar sesión."}, status=status.HTTP_200_OK)
+    
+# ================ Admin ================
+class AdminUpdateUserView(generics.RetrieveUpdateAPIView):
+    permission_classes = [permissions.AllowAny] # <- Habilitado solo para pruebas, luego cambiar a IsAdmin
+    serializer_class = AdminUpdateUserSerializer
+
+    def get_object(self):
+        return get_object_or_404(User, pk=self.kwargs.get('pk'))
+    
+    def patch(self, request, *args, **kwargs):
+        resp = super().patch(request, *args, **kwargs)
+        if resp.status_code in (200, 202):
+            data = dict(resp.data) if isinstance(resp.data, dict) else {}
+            data["message"] = "Datos actualizados correctamente."
+            return Response(data, status=status.HTTP_200_OK)
+        return resp

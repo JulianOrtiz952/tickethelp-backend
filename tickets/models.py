@@ -22,19 +22,19 @@ class Ticket(models.Model):
     # Relaciones según tu MER
     administrador = models.ForeignKey(
         settings.AUTH_USER_MODEL,
-        null=True, blank=True,
+        null=True, blank=False,
         on_delete=models.SET_NULL,
         related_name="tickets_administrados",
     )
     tecnico = models.ForeignKey(
         settings.AUTH_USER_MODEL,
-        null=True, blank=True,
+        null=True, blank=False,
         on_delete=models.SET_NULL,
         related_name="tickets_asignados",
     )
     cliente = models.ForeignKey(
         settings.AUTH_USER_MODEL,
-        null=True, blank=True,
+        null=True, blank=False,
         on_delete=models.SET_NULL,
         related_name="tickets_de_cliente",
     )

@@ -11,13 +11,15 @@ class NotificationTypeModelTest(TestCase):
     """Tests para el modelo NotificationType."""
     
     def setUp(self):
-        self.notification_type = NotificationType.objects.create(
+        self.notification_type, created = NotificationType.objects.get_or_create(
             codigo='ticket_creado',
-            nombre='Ticket Creado',
-            descripcion='Notificación cuando se crea un nuevo ticket',
-            enviar_a_cliente=True,
-            enviar_a_tecnico=True,
-            enviar_a_admin=False
+            defaults={
+                'nombre': 'Ticket Creado',
+                'descripcion': 'Notificación cuando se crea un nuevo ticket',
+                'enviar_a_cliente': True,
+                'enviar_a_tecnico': True,
+                'enviar_a_admin': False
+            }
         )
     
     def test_notification_type_creation(self):
@@ -79,10 +81,12 @@ class NotificationModelTest(TestCase):
         )
         
         # Crear tipo de notificación
-        self.notification_type = NotificationType.objects.create(
+        self.notification_type, created = NotificationType.objects.get_or_create(
             codigo='ticket_creado',
-            nombre='Ticket Creado',
-            enviar_a_cliente=True
+            defaults={
+                'nombre': 'Ticket Creado',
+                'enviar_a_cliente': True
+            }
         )
         
         # Crear notificación

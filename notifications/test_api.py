@@ -54,10 +54,12 @@ class NotificationAPITestCase(APITestCase):
         )
         
         # Crear tipo de notificación
-        self.notification_type = NotificationType.objects.create(
+        self.notification_type, created = NotificationType.objects.get_or_create(
             codigo='ticket_creado',
-            nombre='Ticket Creado',
-            enviar_a_cliente=True
+            defaults={
+                'nombre': 'Ticket Creado',
+                'enviar_a_cliente': True
+            }
         )
         
         # Crear notificaciones

@@ -11,6 +11,7 @@ from django.utils import timezone
 from django.contrib.auth import get_user_model
 
 from .models import Notification, NotificationType
+from .email_config import EmailConfig
 from tickets.models import Ticket
 
 User = get_user_model()
@@ -335,42 +336,35 @@ class NotificationService:
     def _enviar_email(cls, usuario: User, ticket: Ticket, tipo_codigo: str,
                      titulo: str, mensaje: str):
         """Envía un email de notificación."""
-        if not hasattr(settings, 'EMAIL_HOST') or not settings.EMAIL_HOST:
+        if not EmailConfig.EMAIL_BACKEND or EmailConfig.EMAIL_BACKEND == 'django.core.mail.backends.dummy.EmailBackend':
             logger.warning("Configuración de email no encontrada, saltando envío de email")
             return
         
-        template_config = cls.EMAIL_TEMPLATES.get(tipo_codigo, {})
+        # Obtener template de email
+        template_config = EmailConfig.get_template(tipo_codigo)
+        if not template_config:
+            logger.warning(f"No se encontró template de email para {tipo_codigo}")
+            return
+        
         subject = template_config.get('subject', f'Notificación - {titulo}')
+        template = template_config.get('template', mensaje)
         
-        # Reemplazar variables en el subject
-        subject = subject.format(
-            ticket_id=ticket.pk,
-            ticket_titulo=ticket.titulo,
-            usuario_nombre=usuario.email
-        )
+        # Generar contexto para el template
+        context = EmailConfig.get_email_context(ticket, usuario)
         
-        # Por ahora enviamos un email simple, después se puede mejorar con templates HTML
-        email_message = f"""
-{titulo}
-
-{mensaje}
-
-Detalles del Ticket:
-- ID: #{ticket.pk}
-- Título: {ticket.titulo}
-- Estado: {ticket.estado.nombre}
-- Fecha: {ticket.fecha}
-
-Gracias por usar nuestros servicios.
-
----
-Sistema de Tickets
-        """.strip()
+        # Formatear subject y mensaje
+        try:
+            subject = subject.format(**context)
+            email_message = EmailConfig.format_email_content(template, context)
+        except Exception as e:
+            logger.error(f"Error formateando email: {e}")
+            # Fallback a mensaje simple
+            email_message = f"{titulo}\n\n{mensaje}"
         
         send_mail(
             subject=subject,
             message=email_message,
-            from_email=settings.DEFAULT_FROM_EMAIL,
+            from_email=EmailConfig.DEFAULT_FROM_EMAIL,
             recipient_list=[usuario.email],
             fail_silently=False
         )

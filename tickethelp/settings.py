@@ -38,6 +38,7 @@ INSTALLED_APPS = [
     # Apps locales
     "tickets",
     "users",
+    "notifications.apps.NotificationsConfig",
 ]
 
 # -----------------------------

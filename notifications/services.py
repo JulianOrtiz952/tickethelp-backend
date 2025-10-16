@@ -1,17 +1,11 @@
-"""
-Servicio de notificaciones para el sistema de tickets.
-Maneja tanto notificaciones por email como notificaciones internas.
-"""
 import logging
-from typing import List, Optional, Dict, Any
+from typing import Dict, Any, Optional
 from django.core.mail import send_mail
 from django.conf import settings
-from django.template.loader import render_to_string
 from django.utils import timezone
 from django.contrib.auth import get_user_model
 
 from .models import Notification, NotificationType
-from .email_config import EmailConfig
 from tickets.models import Ticket
 
 User = get_user_model()
@@ -19,50 +13,11 @@ logger = logging.getLogger(__name__)
 
 
 class NotificationService:
-    """
-    Servicio centralizado para el manejo de notificaciones.
-    Coordina el envío de emails y el registro de notificaciones internas.
-    """
-    
-    # Configuración de templates de email
-    EMAIL_TEMPLATES = {
-        'ticket_creado': {
-            'subject': 'Nuevo Ticket Creado - #{ticket_id}',
-            'template': 'notifications/emails/ticket_creado.html'
-        },
-        'ticket_asignado': {
-            'subject': 'Ticket Asignado - #{ticket_id}',
-            'template': 'notifications/emails/ticket_asignado.html'
-        },
-        'estado_cambiado': {
-            'subject': 'Estado del Ticket Actualizado - #{ticket_id}',
-            'template': 'notifications/emails/estado_cambiado.html'
-        },
-        'solicitud_finalizacion': {
-            'subject': 'Solicitud de Finalización - #{ticket_id}',
-            'template': 'notifications/emails/solicitud_finalizacion.html'
-        },
-        'ticket_finalizado': {
-            'subject': 'Ticket Finalizado - #{ticket_id}',
-            'template': 'notifications/emails/ticket_finalizado.html'
-        },
-        'tecnico_cambiado': {
-            'subject': 'Técnico Asignado Modificado - #{ticket_id}',
-            'template': 'notifications/emails/tecnico_cambiado.html'
-        }
-    }
+    """Servicio centralizado para el manejo de notificaciones."""
     
     @classmethod
     def enviar_notificacion_ticket_creado(cls, ticket: Ticket) -> Dict[str, Any]:
-        """
-        Envía notificaciones cuando se crea un nuevo ticket.
-        
-        Args:
-            ticket: Instancia del ticket creado
-            
-        Returns:
-            Dict con el resultado del envío
-        """
+        """Envía notificaciones cuando se crea un nuevo ticket."""
         resultados = {
             'emails_enviados': 0,
             'emails_fallidos': 0,
@@ -71,33 +26,19 @@ class NotificationService:
         }
         
         try:
-            # 1. Notificación al cliente
             if ticket.cliente:
                 cls._enviar_notificacion_cliente(
-                    ticket, 
-                    'ticket_creado',
+                    ticket, 'ticket_creado',
                     'Su ticket ha sido creado exitosamente',
-                    'Su ticket ha sido registrado en nuestro sistema y será procesado por nuestro equipo técnico.',
+                    'Su ticket ha sido registrado en nuestro sistema.',
                     resultados
                 )
             
-            # 2. Notificación al técnico (si está asignado)
             if ticket.tecnico:
                 cls._enviar_notificacion_tecnico(
-                    ticket,
-                    'ticket_asignado',
+                    ticket, 'ticket_asignado',
                     'Nuevo ticket asignado',
-                    'Se le ha asignado un nuevo ticket que requiere su atención.',
-                    resultados
-                )
-            
-            # 3. Notificación al administrador (si no es quien creó el ticket)
-            if ticket.administrador and ticket.administrador != ticket.cliente:
-                cls._enviar_notificacion_admin(
-                    ticket,
-                    'ticket_creado',
-                    'Nuevo ticket creado en el sistema',
-                    'Se ha creado un nuevo ticket en el sistema que requiere supervisión.',
+                    'Se le ha asignado un nuevo ticket.',
                     resultados
                 )
                 
@@ -109,9 +50,7 @@ class NotificationService:
     
     @classmethod
     def enviar_notificacion_estado_cambiado(cls, ticket: Ticket, estado_anterior: str) -> Dict[str, Any]:
-        """
-        Envía notificaciones cuando cambia el estado de un ticket.
-        """
+        """Envía notificaciones cuando cambia el estado de un ticket."""
         resultados = {
             'emails_enviados': 0,
             'emails_fallidos': 0,
@@ -120,11 +59,9 @@ class NotificationService:
         }
         
         try:
-            # Notificación al cliente
             if ticket.cliente:
                 cls._enviar_notificacion_cliente(
-                    ticket,
-                    'estado_cambiado',
+                    ticket, 'estado_cambiado',
                     f'Estado del ticket actualizado a: {ticket.estado.nombre}',
                     f'El estado de su ticket ha cambiado de "{estado_anterior}" a "{ticket.estado.nombre}".',
                     resultados,
@@ -139,9 +76,7 @@ class NotificationService:
     
     @classmethod
     def enviar_solicitud_finalizacion(cls, ticket: Ticket) -> Dict[str, Any]:
-        """
-        Envía notificación al administrador cuando se solicita finalizar un ticket.
-        """
+        """Envía notificación al administrador cuando se solicita finalizar un ticket."""
         resultados = {
             'emails_enviados': 0,
             'emails_fallidos': 0,
@@ -150,13 +85,11 @@ class NotificationService:
         }
         
         try:
-            # Buscar administradores activos
             administradores = User.objects.filter(role=User.Role.ADMIN, is_active=True)
             
             for admin in administradores:
                 cls._enviar_notificacion_admin(
-                    ticket,
-                    'solicitud_finalizacion',
+                    ticket, 'solicitud_finalizacion',
                     'Solicitud de finalización de ticket',
                     f'El técnico {ticket.tecnico.email} solicita finalizar el ticket #{ticket.pk}.',
                     resultados
@@ -170,9 +103,7 @@ class NotificationService:
     
     @classmethod
     def enviar_ticket_finalizado(cls, ticket: Ticket) -> Dict[str, Any]:
-        """
-        Envía notificaciones cuando un ticket es finalizado por el administrador.
-        """
+        """Envía notificaciones cuando un ticket es finalizado."""
         resultados = {
             'emails_enviados': 0,
             'emails_fallidos': 0,
@@ -181,23 +112,19 @@ class NotificationService:
         }
         
         try:
-            # Notificación al cliente
             if ticket.cliente:
                 cls._enviar_notificacion_cliente(
-                    ticket,
-                    'ticket_finalizado',
+                    ticket, 'ticket_finalizado',
                     'Ticket finalizado',
-                    'Su ticket ha sido finalizado exitosamente. Gracias por usar nuestros servicios.',
+                    'Su ticket ha sido finalizado exitosamente.',
                     resultados
                 )
             
-            # Notificación al técnico
             if ticket.tecnico:
                 cls._enviar_notificacion_tecnico(
-                    ticket,
-                    'ticket_finalizado',
+                    ticket, 'ticket_finalizado',
                     'Ticket finalizado',
-                    'El ticket que tenía asignado ha sido finalizado por el administrador.',
+                    'El ticket que tenía asignado ha sido finalizado.',
                     resultados
                 )
                 
@@ -209,9 +136,7 @@ class NotificationService:
     
     @classmethod
     def enviar_tecnico_cambiado(cls, ticket: Ticket, tecnico_anterior: Optional[User]) -> Dict[str, Any]:
-        """
-        Envía notificaciones cuando se cambia el técnico asignado.
-        """
+        """Envía notificaciones cuando se cambia el técnico asignado."""
         resultados = {
             'emails_enviados': 0,
             'emails_fallidos': 0,
@@ -220,24 +145,20 @@ class NotificationService:
         }
         
         try:
-            # Notificación al técnico anterior
             if tecnico_anterior:
                 cls._enviar_notificacion_tecnico(
-                    ticket,
-                    'tecnico_cambiado',
+                    ticket, 'tecnico_cambiado',
                     'Ticket reasignado',
                     f'El ticket #{ticket.pk} ha sido reasignado a otro técnico.',
                     resultados,
                     usuario_destino=tecnico_anterior
                 )
             
-            # Notificación al nuevo técnico
             if ticket.tecnico:
                 cls._enviar_notificacion_tecnico(
-                    ticket,
-                    'ticket_asignado',
+                    ticket, 'ticket_asignado',
                     'Nuevo ticket asignado',
-                    'Se le ha asignado un nuevo ticket que requiere su atención.',
+                    'Se le ha asignado un nuevo ticket.',
                     resultados
                 )
                 
@@ -281,19 +202,17 @@ class NotificationService:
     def _enviar_notificacion_completa(cls, usuario: User, ticket: Ticket, tipo_codigo: str,
                                     titulo: str, mensaje: str, resultados: Dict,
                                     datos_adicionales: Dict = None):
-        """
-        Envía tanto la notificación por email como la notificación interna.
-        """
+        """Envía tanto la notificación por email como la notificación interna."""
         if not usuario or not usuario.email:
             return
         
-        # 1. Crear notificación interna
+        # Crear notificación interna
         cls._crear_notificacion_interna(
             usuario, ticket, tipo_codigo, titulo, mensaje, datos_adicionales
         )
         resultados['notificaciones_internas'] += 1
         
-        # 2. Enviar email
+        # Enviar email
         try:
             cls._enviar_email(usuario, ticket, tipo_codigo, titulo, mensaje)
             resultados['emails_enviados'] += 1
@@ -336,35 +255,33 @@ class NotificationService:
     def _enviar_email(cls, usuario: User, ticket: Ticket, tipo_codigo: str,
                      titulo: str, mensaje: str):
         """Envía un email de notificación."""
-        if not EmailConfig.EMAIL_BACKEND or EmailConfig.EMAIL_BACKEND == 'django.core.mail.backends.dummy.EmailBackend':
+        if not hasattr(settings, 'EMAIL_HOST') or not settings.EMAIL_HOST:
             logger.warning("Configuración de email no encontrada, saltando envío de email")
             return
         
-        # Obtener template de email
-        template_config = EmailConfig.get_template(tipo_codigo)
-        if not template_config:
-            logger.warning(f"No se encontró template de email para {tipo_codigo}")
-            return
+        subject = f"{titulo} - Ticket #{ticket.pk}"
         
-        subject = template_config.get('subject', f'Notificación - {titulo}')
-        template = template_config.get('template', mensaje)
-        
-        # Generar contexto para el template
-        context = EmailConfig.get_email_context(ticket, usuario)
-        
-        # Formatear subject y mensaje
-        try:
-            subject = subject.format(**context)
-            email_message = EmailConfig.format_email_content(template, context)
-        except Exception as e:
-            logger.error(f"Error formateando email: {e}")
-            # Fallback a mensaje simple
-            email_message = f"{titulo}\n\n{mensaje}"
+        email_message = f"""
+{titulo}
+
+{mensaje}
+
+Detalles del Ticket:
+- ID: #{ticket.pk}
+- Título: {ticket.titulo}
+- Estado: {ticket.estado.nombre}
+- Fecha: {ticket.fecha}
+
+Gracias por usar nuestros servicios.
+
+---
+Sistema de Tickets
+        """.strip()
         
         send_mail(
             subject=subject,
             message=email_message,
-            from_email=EmailConfig.DEFAULT_FROM_EMAIL,
+            from_email=getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@tickethelp.com'),
             recipient_list=[usuario.email],
             fail_silently=False
         )

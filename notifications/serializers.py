@@ -1,24 +1,14 @@
 from rest_framework import serializers
 from .models import Notification, NotificationType
-from users.models import User
-from tickets.models import Ticket
 
 
 class NotificationTypeSerializer(serializers.ModelSerializer):
-    """Serializer para tipos de notificaciones."""
-    
     class Meta:
         model = NotificationType
-        fields = [
-            'id', 'codigo', 'nombre', 'descripcion', 'es_activo',
-            'enviar_a_cliente', 'enviar_a_tecnico', 'enviar_a_admin'
-        ]
-        read_only_fields = ['id', 'codigo']
+        fields = ['id', 'codigo', 'nombre', 'descripcion', 'es_activo']
 
 
 class NotificationSerializer(serializers.ModelSerializer):
-    """Serializer para notificaciones."""
-    
     tipo_nombre = serializers.CharField(source='tipo.nombre', read_only=True)
     tipo_codigo = serializers.CharField(source='tipo.codigo', read_only=True)
     usuario_email = serializers.CharField(source='usuario.email', read_only=True)
@@ -33,16 +23,9 @@ class NotificationSerializer(serializers.ModelSerializer):
             'tipo_nombre', 'tipo_codigo', 'usuario_email',
             'ticket_titulo', 'ticket_id'
         ]
-        read_only_fields = [
-            'id', 'fecha_creacion', 'fecha_envio', 'fecha_lectura',
-            'tipo_nombre', 'tipo_codigo', 'usuario_email',
-            'ticket_titulo', 'ticket_id'
-        ]
 
 
 class NotificationListSerializer(serializers.ModelSerializer):
-    """Serializer simplificado para listar notificaciones."""
-    
     tipo_nombre = serializers.CharField(source='tipo.nombre', read_only=True)
     ticket_titulo = serializers.CharField(source='ticket.titulo', read_only=True)
     es_leida = serializers.BooleanField(read_only=True)
@@ -55,36 +38,7 @@ class NotificationListSerializer(serializers.ModelSerializer):
         ]
 
 
-class NotificationMarkAsReadSerializer(serializers.Serializer):
-    """Serializer para marcar notificaciones como leídas."""
-    
-    notification_ids = serializers.ListField(
-        child=serializers.IntegerField(),
-        help_text="Lista de IDs de notificaciones a marcar como leídas"
-    )
-    
-    def validate_notification_ids(self, value):
-        """Valida que los IDs de notificaciones existan y pertenezcan al usuario."""
-        if not value:
-            raise serializers.ValidationError("La lista no puede estar vacía.")
-        
-        # Verificar que todas las notificaciones existan
-        existing_ids = Notification.objects.filter(
-            id__in=value
-        ).values_list('id', flat=True)
-        
-        missing_ids = set(value) - set(existing_ids)
-        if missing_ids:
-            raise serializers.ValidationError(
-                f"Las notificaciones con IDs {list(missing_ids)} no existen."
-            )
-        
-        return value
-
-
 class NotificationStatsSerializer(serializers.Serializer):
-    """Serializer para estadísticas de notificaciones."""
-    
     total = serializers.IntegerField()
     pendientes = serializers.IntegerField()
     enviadas = serializers.IntegerField()
@@ -92,3 +46,78 @@ class NotificationStatsSerializer(serializers.Serializer):
     fallidas = serializers.IntegerField()
     no_leidas = serializers.IntegerField()
 
+
+class CreateNotificationSerializer(serializers.ModelSerializer):
+    """Serializer para crear notificaciones manualmente."""
+    user_document = serializers.CharField(write_only=True, help_text="Documento del usuario destinatario")
+    ticket_id = serializers.IntegerField(required=False, allow_null=True, help_text="ID del ticket relacionado")
+    tipo_codigo = serializers.CharField(help_text="Código del tipo de notificación")
+    
+    class Meta:
+        model = Notification
+        fields = [
+            'user_document', 'ticket_id', 'tipo_codigo', 
+            'titulo', 'mensaje', 'datos_adicionales'
+        ]
+    
+    def validate_user_document(self, value):
+        """Valida que el documento del usuario exista."""
+        from django.contrib.auth import get_user_model
+        User = get_user_model()
+        
+        try:
+            User.objects.get(document=value)
+        except User.DoesNotExist:
+            raise serializers.ValidationError("Usuario no encontrado")
+        return value
+    
+    def validate_tipo_codigo(self, value):
+        """Valida que el tipo de notificación exista."""
+        try:
+            NotificationType.objects.get(codigo=value, es_activo=True)
+        except NotificationType.DoesNotExist:
+            raise serializers.ValidationError("Tipo de notificación no encontrado o inactivo")
+        return value
+    
+    def validate_ticket_id(self, value):
+        """Valida que el ticket exista si se proporciona."""
+        if value is not None:
+            from tickets.models import Ticket
+            try:
+                Ticket.objects.get(id=value)
+            except Ticket.DoesNotExist:
+                raise serializers.ValidationError("Ticket no encontrado")
+        return value
+    
+    def create(self, validated_data):
+        """Crea la notificación."""
+        from django.contrib.auth import get_user_model
+        from tickets.models import Ticket
+        from django.utils import timezone
+        
+        User = get_user_model()
+        
+        # Obtener usuario
+        user = User.objects.get(document=validated_data['user_document'])
+        
+        # Obtener tipo de notificación
+        tipo = NotificationType.objects.get(codigo=validated_data['tipo_codigo'])
+        
+        # Obtener ticket si se proporciona
+        ticket = None
+        if validated_data.get('ticket_id'):
+            ticket = Ticket.objects.get(id=validated_data['ticket_id'])
+        
+        # Crear notificación
+        notification = Notification.objects.create(
+            usuario=user,
+            ticket=ticket,
+            tipo=tipo,
+            titulo=validated_data['titulo'],
+            mensaje=validated_data['mensaje'],
+            datos_adicionales=validated_data.get('datos_adicionales', {}),
+            estado=Notification.Estado.ENVIADA,
+            fecha_envio=timezone.now()
+        )
+        
+        return notification

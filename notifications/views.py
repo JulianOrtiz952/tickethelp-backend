@@ -4,14 +4,15 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from django.shortcuts import get_object_or_404
 from django.db.models import Q, Count
-from django.utils import timezone
+from django.contrib.auth import get_user_model
 
 from .models import Notification, NotificationType
 from .serializers import (
     NotificationSerializer, NotificationListSerializer,
-    NotificationMarkAsReadSerializer, NotificationStatsSerializer,
-    NotificationTypeSerializer
+    NotificationStatsSerializer, NotificationTypeSerializer
 )
+
+User = get_user_model()
 
 
 @api_view(['GET'])
@@ -19,13 +20,7 @@ from .serializers import (
 def notification_list(request):
     """
     Lista las notificaciones del usuario autenticado.
-    
-    Query parameters:
-    - estado: Filtrar por estado (PENDIENTE, ENVIADA, LEIDA, FALLIDA)
-    - tipo: Filtrar por tipo de notificación
-    - leidas: true/false para filtrar por estado de lectura
-    - limit: Número de notificaciones a retornar (default: 20)
-    - offset: Número de notificaciones a saltar (default: 0)
+    Cumple con criterio 8: Usuario autenticado accede a su historial.
     """
     user = request.user
     
@@ -51,11 +46,8 @@ def notification_list(request):
             queryset = queryset.exclude(estado=Notification.Estado.LEIDA)
     
     # Paginación
-    limit = int(request.query_params.get('limit', 20))
+    limit = min(int(request.query_params.get('limit', 20)), 100)
     offset = int(request.query_params.get('offset', 0))
-    
-    # Limitar el límite máximo
-    limit = min(limit, 100)
     
     total_count = queryset.count()
     notifications = queryset[offset:offset + limit]
@@ -83,7 +75,7 @@ def notification_detail(request, notification_id):
     notification = get_object_or_404(
         Notification.objects.select_related('tipo', 'ticket', 'usuario'),
         id=notification_id,
-        usuario=user
+        usuario=user  # Solo puede ver sus propias notificaciones
     )
     
     # Marcar como leída si no lo está
@@ -94,51 +86,11 @@ def notification_detail(request, notification_id):
     return Response(serializer.data)
 
 
-@api_view(['POST'])
-@permission_classes([IsAuthenticated])
-def mark_notifications_as_read(request):
-    """
-    Marca múltiples notificaciones como leídas.
-    """
-    user = request.user
-    serializer = NotificationMarkAsReadSerializer(data=request.data)
-    
-    if serializer.is_valid():
-        notification_ids = serializer.validated_data['notification_ids']
-        
-        # Verificar que todas las notificaciones pertenezcan al usuario
-        notifications = Notification.objects.filter(
-            id__in=notification_ids,
-            usuario=user
-        )
-        
-        if notifications.count() != len(notification_ids):
-            return Response(
-                {'error': 'No tienes permiso para acceder a algunas de estas notificaciones.'},
-                status=status.HTTP_403_FORBIDDEN
-            )
-        
-        # Marcar como leídas
-        updated_count = notifications.filter(
-            estado__in=[Notification.Estado.PENDIENTE, Notification.Estado.ENVIADA]
-        ).update(
-            estado=Notification.Estado.LEIDA,
-            fecha_lectura=timezone.now()
-        )
-        
-        return Response({
-            'message': f'{updated_count} notificaciones marcadas como leídas.',
-            'updated_count': updated_count
-        })
-    
-    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def notification_stats(request):
     """
-    Obtiene estadísticas de las notificaciones del usuario.
+    Obtiene estadísticas de las notificaciones del usuario autenticado.
     """
     user = request.user
     
@@ -150,7 +102,6 @@ def notification_stats(request):
         fallidas=Count('id', filter=Q(estado=Notification.Estado.FALLIDA))
     )
     
-    # Calcular no leídas (pendientes + enviadas)
     stats['no_leidas'] = stats['pendientes'] + stats['enviadas']
     
     serializer = NotificationStatsSerializer(stats)
@@ -160,52 +111,7 @@ def notification_stats(request):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def notification_types(request):
-    """
-    Lista los tipos de notificaciones disponibles.
-    """
+    """Lista los tipos de notificaciones disponibles."""
     types = NotificationType.objects.filter(es_activo=True).order_by('nombre')
     serializer = NotificationTypeSerializer(types, many=True)
     return Response(serializer.data)
-
-
-@api_view(['POST'])
-@permission_classes([IsAuthenticated])
-def mark_all_as_read(request):
-    """
-    Marca todas las notificaciones del usuario como leídas.
-    """
-    user = request.user
-    
-    updated_count = Notification.objects.filter(
-        usuario=user,
-        estado__in=[Notification.Estado.PENDIENTE, Notification.Estado.ENVIADA]
-    ).update(
-        estado=Notification.Estado.LEIDA,
-        fecha_lectura=timezone.now()
-    )
-    
-    return Response({
-        'message': f'{updated_count} notificaciones marcadas como leídas.',
-        'updated_count': updated_count
-    })
-
-
-@api_view(['DELETE'])
-@permission_classes([IsAuthenticated])
-def delete_notification(request, notification_id):
-    """
-    Elimina una notificación específica.
-    """
-    user = request.user
-    
-    notification = get_object_or_404(
-        Notification,
-        id=notification_id,
-        usuario=user
-    )
-    
-    notification.delete()
-    
-    return Response({
-        'message': 'Notificación eliminada exitosamente.'
-    }, status=status.HTTP_204_NO_CONTENT)

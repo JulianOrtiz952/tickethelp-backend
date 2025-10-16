@@ -4,23 +4,15 @@ from . import views
 app_name = 'notifications'
 
 urlpatterns = [
-    # Lista de notificaciones
+    # Lista de notificaciones del usuario autenticado
     path('', views.notification_list, name='notification-list'),
     
-    # Detalle de notificación
+    # Detalle de notificación específica
     path('<int:notification_id>/', views.notification_detail, name='notification-detail'),
     
-    # Marcar notificaciones como leídas
-    path('mark-as-read/', views.mark_notifications_as_read, name='mark-as-read'),
-    path('mark-all-as-read/', views.mark_all_as_read, name='mark-all-as-read'),
-    
-    # Estadísticas
+    # Estadísticas del usuario autenticado
     path('stats/', views.notification_stats, name='notification-stats'),
     
-    # Tipos de notificaciones
+    # Tipos de notificaciones disponibles
     path('types/', views.notification_types, name='notification-types'),
-    
-    # Eliminar notificación
-    path('<int:notification_id>/delete/', views.delete_notification, name='delete-notification'),
 ]
-

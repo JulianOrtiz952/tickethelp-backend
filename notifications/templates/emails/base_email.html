@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ subject }}</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #F3F4F6;
+        }
+        .email-container {
+            background-color: #FFFFFF;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+        }
+        .header {
+            background: #1F5E89;
+            color: white;
+            padding: 30px 20px;
+            text-align: center;
+        }
+        .header h1 {
+            margin: 0;
+            font-size: 24px;
+            font-weight: 300;
+        }
+        .content {
+            padding: 30px 20px;
+        }
+        .ticket-info {
+            background-color: #F9FAFB;
+            border-left: 4px solid #1F5E89;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 0 5px 5px 0;
+        }
+        .ticket-info h3 {
+            margin-top: 0;
+            color: #1F5E89;
+            font-size: 18px;
+        }
+        .info-row {
+            display: flex;
+            margin: 10px 0;
+            align-items: center;
+        }
+        .info-label {
+            font-weight: bold;
+            min-width: 120px;
+            color: #555;
+        }
+        .info-value {
+            flex: 1;
+            color: #333;
+        }
+        .status-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: bold;
+            text-transform: uppercase;
+        }
+        .status-abierto { background-color: #d4edda; color: #155724; }
+        .status-en-progreso { background-color: #fff3cd; color: #856404; }
+        .status-cerrado { background-color: #f8d7da; color: #721c24; }
+        .status-pendiente { background-color: #e2e3e5; color: #383d41; }
+        .description {
+            background-color: #F9FAFB;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 15px 0;
+            border: 1px solid #e9ecef;
+        }
+        .footer {
+            background-color: #F9FAFB;
+            padding: 20px;
+            text-align: center;
+            color: #6c757d;
+            font-size: 14px;
+        }
+        .footer p {
+            margin: 5px 0;
+        }
+        .priority-high { border-left-color: #dc3545; }
+        .priority-medium { border-left-color: #0d9488; }
+        .priority-low { border-left-color: #0d9488; }
+    </style>
+</head>
+<body>
+    <div class="email-container">
+        <div class="header">
+            <h1>🎫 Sistema de Tickets</h1>
+        </div>
+        
+        <div class="content">
+            {% block content %}{% endblock %}
+        </div>
+        
+        <div class="footer">
+            <p><strong>Sistema de Gestión de Tickets</strong></p>
+            <p>Este es un mensaje automático, por favor no responder a este correo.</p>
+            <p>© 2025 TicketHelp - Todos los derechos reservados</p>
+        </div>
+    </div>
+</body>
+</html>

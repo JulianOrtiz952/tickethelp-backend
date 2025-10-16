@@ -1,0 +1,64 @@
+{% extends "emails/base_email.html" %}
+
+{% block content %}
+<h2>¡Hola {{ usuario.first_name|default:usuario.email }}! 📢</h2>
+
+<p>Te informamos que el estado de tu ticket ha sido actualizado.</p>
+
+<div class="ticket-info">
+    <h3>🔄 Actualización de Estado</h3>
+    
+    <div class="info-row">
+        <span class="info-label">Número:</span>
+        <span class="info-value"><strong>#{{ ticket.pk }}</strong></span>
+    </div>
+    
+    <div class="info-row">
+        <span class="info-label">Título:</span>
+        <span class="info-value">{{ ticket.titulo }}</span>
+    </div>
+    
+    <div class="info-row">
+        <span class="info-label">Nuevo estado:</span>
+        <span class="info-value">
+            <span class="status-badge status-{{ ticket.estado.codigo }}">{{ ticket.estado.nombre }}</span>
+        </span>
+    </div>
+    
+    {% if ticket.tecnico %}
+    <div class="info-row">
+        <span class="info-label">Técnico asignado:</span>
+        <span class="info-value">{{ ticket.tecnico.first_name }} {{ ticket.tecnico.last_name }}</span>
+    </div>
+    {% endif %}
+    
+    <div class="info-row">
+        <span class="info-label">Fecha de actualización:</span>
+        <span class="info-value">{{ ticket.actualizado_en|date:"d/m/Y H:i" }}</span>
+    </div>
+</div>
+
+{% if ticket.descripcion %}
+<div class="description">
+    <h4>📝 Descripción del problema:</h4>
+    <p>{{ ticket.descripcion|linebreaks }}</p>
+</div>
+{% endif %}
+
+<div style="background-color: #F9FAFB; padding: 15px; border-radius: 5px; margin: 20px 0; border-left: 4px solid #0d9488;">
+    <h4 style="margin-top: 0; color: #1F5E89;">📞 ¿Qué significa este cambio?</h4>
+    {% if ticket.estado.codigo == 'en-progreso' %}
+    <p style="margin-bottom: 0;">Nuestro equipo técnico está trabajando activamente en resolver tu problema. Te mantendremos informado sobre cualquier progreso.</p>
+    {% elif ticket.estado.codigo == 'pendiente' %}
+    <p style="margin-bottom: 0;">Tu ticket está en cola de espera. Nuestro equipo lo revisará tan pronto como sea posible.</p>
+    {% elif ticket.estado.codigo == 'cerrado' %}
+    <p style="margin-bottom: 0;">Tu ticket ha sido resuelto. Si tienes alguna pregunta adicional, no dudes en contactarnos.</p>
+    {% else %}
+    <p style="margin-bottom: 0;">El estado de tu ticket ha cambiado. Nuestro equipo continuará trabajando para brindarte la mejor solución.</p>
+    {% endif %}
+</div>
+
+<p>Si tienes alguna pregunta sobre este cambio o necesitas información adicional, puedes responder a este correo.</p>
+
+<p>¡Gracias por tu paciencia! 🙏</p>
+{% endblock %}

@@ -14,11 +14,11 @@ logger = logging.getLogger(__name__)
 
 
 class NotificationService:
-    """Servicio centralizado para el manejo de notificaciones."""
+    """Manejo central de notificaciones."""
     
     @classmethod
     def enviar_notificacion_ticket_creado(cls, ticket: Ticket) -> Dict[str, Any]:
-        """Envía notificaciones cuando se crea un nuevo ticket."""
+        """Notifica al crear un ticket."""
         resultados = {
             'emails_enviados': 0,
             'emails_fallidos': 0,
@@ -27,7 +27,6 @@ class NotificationService:
         }
         
         try:
-            # Notificar al cliente
             if ticket.cliente:
                 cls._enviar_notificacion_cliente(
                     ticket, 'ticket_creado',
@@ -35,8 +34,6 @@ class NotificationService:
                     'Su ticket ha sido registrado en nuestro sistema.',
                     resultados
                 )
-            
-            # Notificar al técnico si está asignado
             if ticket.tecnico:
                 cls._enviar_notificacion_tecnico(
                     ticket, 'ticket_asignado',
@@ -252,6 +249,31 @@ class NotificationService:
                 estado=Notification.Estado.ENVIADA,
                 fecha_envio=timezone.now()
             )
+            # Asegurar que la notificación tenga los destinatarios correctos
+            # basados en la configuración del tipo de notificación y las
+            # relaciones del ticket (cliente, técnico, administrador).
+            # Rebuscar la notificación recién creada para asignar M2M.
+            try:
+                notif = Notification.objects.filter(ticket=ticket, tipo=tipo_notificacion, titulo=titulo).order_by('-fecha_creacion').first()
+                if notif:
+                    destinatarios = []
+                    # si el tipo indica enviar a cliente
+                    if tipo_notificacion.enviar_a_cliente and ticket.cliente:
+                        destinatarios.append(ticket.cliente)
+                    # si indica enviar a técnico
+                    if tipo_notificacion.enviar_a_tecnico and ticket.tecnico:
+                        destinatarios.append(ticket.tecnico)
+                    # si indica enviar a admin
+                    if tipo_notificacion.enviar_a_admin and ticket.administrador:
+                        destinatarios.append(ticket.administrador)
+                    # siempre incluir el usuario objetivo pasado si no está ya
+                    if usuario and usuario not in destinatarios:
+                        destinatarios.append(usuario)
+
+                    if destinatarios:
+                        notif.destinatarios.set([u for u in destinatarios if u])
+            except Exception as e:
+                logger.error(f"Error asignando destinatarios M2M en notificación: {e}")
             
         except Exception as e:
             logger.error(f"Error creando notificación interna: {e}")

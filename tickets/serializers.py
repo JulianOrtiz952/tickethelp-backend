@@ -68,3 +68,15 @@ class LeastBusyTechnicianSerializer(serializers.Serializer):
         return {
             'email': self.get_least_busy_technician_email()
         }
+
+class ChangeTechnicianSerializer(serializers.Serializer):
+    documento_tecnico = serializers.CharField(max_length=10, required=True)
+
+    def validate_documento_tecnico(self, value):
+        try:
+            tecnico = User.objects.get(document=value, role=User.Role.TECH)
+            if not tecnico.is_active:
+                raise serializers.ValidationError("El técnico está desactivado.")
+            return tecnico
+        except User.DoesNotExist:
+            raise serializers.ValidationError("No existe un técnico con ese documento.")

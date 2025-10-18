@@ -66,3 +66,29 @@ class Ticket(models.Model):
     @property
     def es_activo(self) -> bool:
         return bool(getattr(self.estado, "es_activo", False))
+
+
+class StateChangeRequest(models.Model):
+    class Status(models.TextChoices):
+        PENDING = 'pending', 'Pendiente'
+        APPROVED = 'approved', 'Aprobado'
+        REJECTED = 'rejected', 'Rechazado'
+    
+    ticket = models.ForeignKey(Ticket, on_delete=models.CASCADE, related_name='state_requests')
+    requested_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='state_requests_made')
+    from_state = models.ForeignKey(Estado, on_delete=models.CASCADE, related_name='requests_from')
+    to_state = models.ForeignKey(Estado, on_delete=models.CASCADE, related_name='requests_to')
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING)
+    reason = models.TextField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    approved_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='state_requests_approved')
+    approved_at = models.DateTimeField(null=True, blank=True)
+    rejection_reason = models.TextField(blank=True, null=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = "Solicitud de Cambio de Estado"
+        verbose_name_plural = "Solicitudes de Cambio de Estado"
+
+    def __str__(self):
+        return f"Solicitud #{self.pk} - Ticket #{self.ticket.pk}: {self.from_state.nombre} → {self.to_state.nombre}"

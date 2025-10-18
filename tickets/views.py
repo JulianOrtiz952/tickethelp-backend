@@ -14,6 +14,16 @@ class TicketAV(ListCreateAPIView):
     queryset = Ticket.objects.all()
     serializer_class = TicketSerializer
 
+    def create(self, request, *args, **kwargs):
+        active_technicians = User.objects.filter(role=User.Role.TECH, is_active=True).count()
+        if active_technicians == 0:
+            return Response({
+                'error': 'No hay técnicos activos disponibles para asignar tickets.',
+                'message': 'Debe crear al menos un técnico activo antes de crear tickets.'
+            }, status=status.HTTP_400_BAD_REQUEST)  # cumple CA 8
+        
+        return super().create(request, *args, **kwargs)
+
 class EstadoAV(ListCreateAPIView):
 
     queryset = Estado.objects.all().order_by("nombre")

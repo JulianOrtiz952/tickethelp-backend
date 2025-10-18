@@ -80,3 +80,9 @@ class ChangeTechnicianSerializer(serializers.Serializer):
             return tecnico
         except User.DoesNotExist:
             raise serializers.ValidationError("No existe un técnico con ese documento.")
+
+
+class ActiveTechnicianSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ['document', 'email', 'first_name', 'last_name', 'number']

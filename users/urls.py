@@ -1,5 +1,5 @@
 from rest_framework.routers import DefaultRouter
-from .views import UserViewSet, AdminViewSet, TechnicianViewSet, ClientViewSet, UserUpdateView, ChangePasswordView, ChangePasswordByIdView, UserUpdateByIdView, get_client_by_document, AdminUpdateUserView
+from .views import UserViewSet, AdminViewSet, TechnicianViewSet, ClientViewSet, UserUpdateView, ChangePasswordView, ChangePasswordByIdView, UserUpdateByIdView, get_client_by_document, AdminUpdateUserView, UserUpdateProfilePictureView
 from django.urls import path, include
 urlpatterns = [
     # Listar usuarios
@@ -16,6 +16,8 @@ urlpatterns = [
     path('users/deactivate/<str:pk>', UserViewSet.as_view({'post': 'deactivate'}), name='user-deactivate'),
     # Activar usuario de nuevo
     path('users/activate/<str:pk>/', UserViewSet.as_view({'post': 'activate'}), name='user-activate'),
+    # Actualizar foto de perfil del usuario
+    path('users/update-profile-picture/<str:pk>/', UserUpdateProfilePictureView.as_view(), name='user-update-profile-picture'),
     
     # Listar admins
     path('admins/', AdminViewSet.as_view({'get': 'list'}), name='admin-list'),

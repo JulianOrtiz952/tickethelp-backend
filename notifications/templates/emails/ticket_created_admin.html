@@ -1,0 +1,100 @@
+{% extends "emails/base_email.html" %}
+
+{% block content %}
+<h2>¡Hola {{ usuario.first_name|default:usuario.email }}! 👨‍💼</h2>
+
+<p>Se ha creado un nuevo ticket en el sistema que requiere tu supervisión.</p>
+
+<div class="ticket-info">
+    <h3>📊 Nuevo Ticket Creado</h3>
+    
+    <div class="info-row">
+        <span class="info-label">Número:</span>
+        <span class="info-value"><strong>#{{ ticket.pk }}</strong></span>
+    </div>
+    
+    <div class="info-row">
+        <span class="info-label">Título:</span>
+        <span class="info-value">{{ ticket.titulo }}</span>
+    </div>
+    
+    <div class="info-row">
+        <span class="info-label">Estado:</span>
+        <span class="info-value">
+            <span class="status-badge status-{{ ticket.estado.codigo }}">{{ ticket.estado.nombre }}</span>
+        </span>
+    </div>
+    
+    <div class="info-row">
+        <span class="info-label">Cliente:</span>
+        <span class="info-value">
+            {{ ticket.cliente.first_name }} {{ ticket.cliente.last_name }}
+            <br><small style="color: #666;">{{ ticket.cliente.email }} | {{ ticket.cliente.document }}</small>
+        </span>
+    </div>
+    
+    {% if ticket.cliente.number %}
+    <div class="info-row">
+        <span class="info-label">Teléfono:</span>
+        <span class="info-value">{{ ticket.cliente.number }}</span>
+    </div>
+    {% endif %}
+    
+    <div class="info-row">
+        <span class="info-label">Fecha de creación:</span>
+        <span class="info-value">{{ ticket.fecha|date:"d/m/Y H:i" }}</span>
+    </div>
+    
+    {% if ticket.equipo %}
+    <div class="info-row">
+        <span class="info-label">Equipo:</span>
+        <span class="info-value">{{ ticket.equipo }}</span>
+    </div>
+    {% endif %}
+    
+    {% if ticket.tecnico %}
+    <div class="info-row">
+        <span class="info-label">Técnico asignado:</span>
+        <span class="info-value">{{ ticket.tecnico.first_name }} {{ ticket.tecnico.last_name }}</span>
+    </div>
+    {% else %}
+    <div class="info-row">
+        <span class="info-label">Técnico asignado:</span>
+        <span class="info-value" style="color: #dc3545;"><strong>⚠️ Sin asignar</strong></span>
+    </div>
+    {% endif %}
+</div>
+
+{% if ticket.descripcion %}
+<div class="description">
+    <h4>📝 Descripción del problema:</h4>
+    <p>{{ ticket.descripcion|linebreaks }}</p>
+</div>
+{% endif %}
+
+<div style="background-color: #F9FAFB; padding: 15px; border-radius: 5px; margin: 20px 0; border-left: 4px solid #0d9488;">
+    <h4 style="margin-top: 0; color: #1F5E89;">📈 Resumen administrativo:</h4>
+    <ul style="margin-bottom: 0;">
+        <li><strong>ID del ticket:</strong> #{{ ticket.pk }}</li>
+        <li><strong>Cliente:</strong> {{ ticket.cliente.first_name }} {{ ticket.cliente.last_name }}</li>
+        <li><strong>Estado actual:</strong> {{ ticket.estado.nombre }}</li>
+        <li><strong>Fecha de creación:</strong> {{ ticket.fecha|date:"d/m/Y H:i" }}</li>
+        {% if ticket.tecnico %}
+        <li><strong>Técnico asignado:</strong> {{ ticket.tecnico.first_name }} {{ ticket.tecnico.last_name }}</li>
+        {% else %}
+        <li><strong>Técnico asignado:</strong> <span style="color: #dc3545;">Pendiente de asignación</span></li>
+        {% endif %}
+    </ul>
+</div>
+
+{% if not ticket.tecnico %}
+<div style="background-color: #F9FAFB; padding: 15px; border-radius: 5px; margin: 20px 0; border-left: 4px solid #dc3545;">
+    <h4 style="margin-top: 0; color: #dc3545;">⚠️ Acción requerida:</h4>
+    <p style="margin-bottom: 0;">Este ticket aún no tiene un técnico asignado. Considera asignar un técnico disponible para dar seguimiento oportuno al cliente.</p>
+</div>
+{% endif %}
+
+<p>Como administrador, puedes monitorear el progreso de este ticket desde el panel de administración.</p>
+
+<p>¡Gracias por tu supervisión! 📊</p>
+{% endblock %}

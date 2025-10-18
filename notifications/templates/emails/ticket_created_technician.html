@@ -1,0 +1,89 @@
+{% extends "emails/base_email.html" %}
+
+{% block content %}
+<h2>¡Hola {{ usuario.first_name|default:usuario.email }}! 🔧</h2>
+
+<p>Se te ha asignado un nuevo ticket de soporte técnico que requiere tu atención.</p>
+
+<div class="ticket-info priority-{{ ticket.priority|default:'medium' }}">
+    <h3>🎯 Ticket Asignado</h3>
+    
+    <div class="info-row">
+        <span class="info-label">Número:</span>
+        <span class="info-value"><strong>#{{ ticket.pk }}</strong></span>
+    </div>
+    
+    <div class="info-row">
+        <span class="info-label">Título:</span>
+        <span class="info-value">{{ ticket.titulo }}</span>
+    </div>
+    
+    <div class="info-row">
+        <span class="info-label">Estado:</span>
+        <span class="info-value">
+            <span class="status-badge status-{{ ticket.estado.codigo }}">{{ ticket.estado.nombre }}</span>
+        </span>
+    </div>
+    
+    <div class="info-row">
+        <span class="info-label">Cliente:</span>
+        <span class="info-value">
+            {{ ticket.cliente.first_name }} {{ ticket.cliente.last_name }}
+            <br><small style="color: #666;">{{ ticket.cliente.email }}</small>
+        </span>
+    </div>
+    
+    <div class="info-row">
+        <span class="info-label">Documento:</span>
+        <span class="info-value">{{ ticket.cliente.document }}</span>
+    </div>
+    
+    {% if ticket.cliente.number %}
+    <div class="info-row">
+        <span class="info-label">Teléfono:</span>
+        <span class="info-value">{{ ticket.cliente.number }}</span>
+    </div>
+    {% endif %}
+    
+    <div class="info-row">
+        <span class="info-label">Fecha de creación:</span>
+        <span class="info-value">{{ ticket.fecha|date:"d/m/Y H:i" }}</span>
+    </div>
+    
+    {% if ticket.equipo %}
+    <div class="info-row">
+        <span class="info-label">Equipo afectado:</span>
+        <span class="info-value"><strong>{{ ticket.equipo }}</strong></span>
+    </div>
+    {% endif %}
+</div>
+
+{% if ticket.descripcion %}
+<div class="description">
+    <h4>📋 Descripción detallada del problema:</h4>
+    <p>{{ ticket.descripcion|linebreaks }}</p>
+</div>
+{% endif %}
+
+<div style="background-color: #F9FAFB; padding: 15px; border-radius: 5px; margin: 20px 0; border-left: 4px solid #0d9488;">
+    <h4 style="margin-top: 0; color: #1F5E89;">⚡ Acciones requeridas:</h4>
+    <ul style="margin-bottom: 0;">
+        <li>Revisar la información del cliente y el problema reportado</li>
+        <li>Contactar al cliente si necesitas información adicional</li>
+        <li>Actualizar el estado del ticket según el progreso</li>
+        <li>Proporcionar una solución o seguimiento oportuno</li>
+    </ul>
+</div>
+
+<div style="background-color: #F9FAFB; padding: 15px; border-radius: 5px; margin: 20px 0; border-left: 4px solid #1F5E89;">
+    <h4 style="margin-top: 0; color: #1F5E89;">📊 Información adicional:</h4>
+    <p style="margin-bottom: 0;">
+        <strong>Administrador:</strong> {{ ticket.administrador.first_name }} {{ ticket.administrador.last_name }}<br>
+        <strong>Fecha de asignación:</strong> {{ ticket.actualizado_en|date:"d/m/Y H:i" }}
+    </p>
+</div>
+
+<p>Por favor, da prioridad a este ticket y mantén al cliente informado sobre el progreso.</p>
+
+<p>¡Gracias por tu dedicación al equipo técnico! 🛠️</p>
+{% endblock %}

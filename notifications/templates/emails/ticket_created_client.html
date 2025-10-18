@@ -1,0 +1,67 @@
+{% extends "emails/base_email.html" %}
+
+{% block content %}
+<h2>¡Hola {{ usuario.first_name|default:usuario.email }}! 👋</h2>
+
+<p>Hemos recibido tu solicitud de soporte técnico y hemos creado un ticket para darle seguimiento.</p>
+
+<div class="ticket-info">
+    <h3>📋 Detalles de tu Ticket</h3>
+    
+    <div class="info-row">
+        <span class="info-label">Número:</span>
+        <span class="info-value"><strong>#{{ ticket.pk }}</strong></span>
+    </div>
+    
+    <div class="info-row">
+        <span class="info-label">Título:</span>
+        <span class="info-value">{{ ticket.titulo }}</span>
+    </div>
+    
+    <div class="info-row">
+        <span class="info-label">Estado:</span>
+        <span class="info-value">
+            <span class="status-badge status-{{ ticket.estado.codigo }}">{{ ticket.estado.nombre }}</span>
+        </span>
+    </div>
+    
+    <div class="info-row">
+        <span class="info-label">Fecha de creación:</span>
+        <span class="info-value">{{ ticket.fecha|date:"d/m/Y H:i" }}</span>
+    </div>
+    
+    {% if ticket.equipo %}
+    <div class="info-row">
+        <span class="info-label">Equipo:</span>
+        <span class="info-value">{{ ticket.equipo }}</span>
+    </div>
+    {% endif %}
+    
+    {% if ticket.tecnico %}
+    <div class="info-row">
+        <span class="info-label">Técnico asignado:</span>
+        <span class="info-value">{{ ticket.tecnico.first_name }} {{ ticket.tecnico.last_name }}</span>
+    </div>
+    {% endif %}
+</div>
+
+{% if ticket.descripcion %}
+<div class="description">
+    <h4>📝 Descripción del problema:</h4>
+    <p>{{ ticket.descripcion|linebreaks }}</p>
+</div>
+{% endif %}
+
+<div style="background-color: #F9FAFB; padding: 15px; border-radius: 5px; margin: 20px 0; border-left: 4px solid #0d9488;">
+    <h4 style="margin-top: 0; color: #1F5E89;">📞 ¿Qué sigue?</h4>
+    <ul style="margin-bottom: 0;">
+        <li>Nuestro equipo técnico revisará tu solicitud</li>
+        <li>Te contactaremos si necesitamos información adicional</li>
+        <li>Recibirás actualizaciones sobre el progreso de tu ticket</li>
+    </ul>
+</div>
+
+<p>Si tienes alguna pregunta adicional o información que agregar, puedes responder a este correo.</p>
+
+<p>¡Gracias por confiar en nuestros servicios! 🚀</p>
+{% endblock %}

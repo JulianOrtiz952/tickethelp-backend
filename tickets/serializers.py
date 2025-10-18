@@ -1,7 +1,8 @@
 from rest_framework import serializers
 from django.db.models import Count
+from django.utils import timezone
 from users.models import User
-from tickets.models import Ticket, Estado
+from tickets.models import Ticket, Estado, StateChangeRequest
 
 class TicketSerializer(serializers.ModelSerializer):
 
@@ -106,3 +107,49 @@ class ActiveTechnicianSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = ['document', 'email', 'first_name', 'last_name', 'number']
+
+
+class StateChangeSerializer(serializers.Serializer):
+    to_state = serializers.PrimaryKeyRelatedField(queryset=Estado.objects.all(), required=True)
+    reason = serializers.CharField(max_length=500, required=False, allow_blank=True)
+
+    def validate_to_state(self, value):
+        if not value:
+            raise serializers.ValidationError("Debe seleccionar un estado de destino.")
+        return value
+
+    def validate(self, attrs):
+        ticket = self.context['ticket']
+        to_state = attrs['to_state']
+        
+        if ticket.estado == to_state:
+            raise serializers.ValidationError({"to_state": "El ticket ya está en este estado."})
+        
+        return attrs
+
+
+class StateApprovalSerializer(serializers.Serializer):
+    action = serializers.ChoiceField(choices=['approve', 'reject'], required=True)
+    rejection_reason = serializers.CharField(max_length=500, required=False, allow_blank=True)
+
+    def validate(self, attrs):
+        action = attrs['action']
+        rejection_reason = attrs.get('rejection_reason', '')
+        
+        if action == 'reject' and not rejection_reason.strip():
+            raise serializers.ValidationError({"rejection_reason": "Debe proporcionar una razón para el rechazo."})
+        
+        return attrs
+
+
+class PendingApprovalSerializer(serializers.ModelSerializer):
+    ticket_titulo = serializers.CharField(source='ticket.titulo', read_only=True)
+    requested_by_name = serializers.CharField(source='requested_by.get_full_name', read_only=True)
+    from_state_name = serializers.CharField(source='from_state.nombre', read_only=True)
+    to_state_name = serializers.CharField(source='to_state.nombre', read_only=True)
+
+    class Meta:
+        model = StateChangeRequest
+        fields = ['id', 'ticket', 'ticket_titulo', 'requested_by', 'requested_by_name', 
+                 'from_state', 'from_state_name', 'to_state', 'to_state_name', 
+                 'reason', 'created_at', 'status']

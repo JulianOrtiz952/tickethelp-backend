@@ -45,7 +45,7 @@ class UserCreateSerializer(serializers.ModelSerializer):
 class UserReadSerializer(serializers.ModelSerializer):
     class Meta:
         model  = User
-        fields = ['document','email','number','role','is_active','date_joined','first_name','last_name']
+        fields = ['document','email','number','role','is_active','date_joined','first_name','last_name', 'profile_picture']
         
 class UserDeactivateSerializer(serializers.ModelSerializer):
     class Meta:
@@ -78,6 +78,18 @@ class UserUpdateSerializer(serializers.ModelSerializer):
     def validate_number(self, value):
         if value and not re.fullmatch(r'^\+?\d{7,15}$', value):
             raise serializers.ValidationError("Número de teléfono inválido.")
+        return value
+
+class UserUpdateProfilePictureSerializer(serializers.ModelSerializer):
+    profile_picture = serializers.URLField(required=False, allow_blank=True, max_length=500)
+    
+    class Meta:
+        model = User
+        fields = ['profile_picture']
+    
+    def validate_profile_picture(self, value):
+        if value and not value.startswith(('http://', 'https://')):
+            raise serializers.ValidationError("La URL de la imagen debe comenzar con http:// o https://")
         return value
 
 # Serializer para cambiar la contraseña

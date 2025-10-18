@@ -14,6 +14,7 @@ from .serializers import (
     UserUpdateSerializer,
     UserDeactivateSerializer,
     AdminUpdateUserSerializer,
+    UserUpdateProfilePictureSerializer,
     ChangePasswordSerializer,
     ChangePasswordByIdSerializer
 )
@@ -170,7 +171,23 @@ class UserUpdateByIdView(generics.RetrieveUpdateAPIView):
             data["message"] = "Datos actualizados correctamente."
             return Response(data, status=status.HTTP_200_OK)
         return resp
+
+class UserUpdateProfilePictureView(generics.RetrieveUpdateAPIView):
+    permission_classes = [permissions.AllowAny] # <- Habilitado solo para pruebas, luego cambiar a IsAuthenticated
+    serializer_class = UserUpdateProfilePictureSerializer
+
+    def get_object(self):
+        return get_object_or_404(User, pk=self.kwargs.get('pk'))
     
+    def patch(self, request, *args, **kwargs):
+        resp = super().patch(request, *args, **kwargs)
+    
+        if resp.status_code in (200, 202):
+            data = dict(resp.data) if isinstance(resp.data, dict) else {}
+            data["message"] = "Foto de perfil actualizada correctamente."
+            return Response(data, status=status.HTTP_200_OK)
+        return resp
+
 class ChangePasswordByIdView(generics.GenericAPIView):
     permission_classes = [permissions.AllowAny]  # <- Habilitado solo para pruebas
     serializer_class = ChangePasswordByIdSerializer

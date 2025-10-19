@@ -7,6 +7,7 @@ from django.contrib.auth import get_user_model
 from django.utils import timezone
 from tickets.models import Ticket, Estado, StateChangeRequest
 from tickets.serializers import TicketSerializer, EstadoSerializer, LeastBusyTechnicianSerializer, ChangeTechnicianSerializer, ActiveTechnicianSerializer, StateChangeSerializer, StateApprovalSerializer, PendingApprovalSerializer
+from notifications.services import NotificationService
 
 User = get_user_model()
 
@@ -22,7 +23,7 @@ class TicketAV(ListCreateAPIView):
             return Response({
                 'error': 'No hay técnicos activos disponibles para asignar tickets.',
                 'message': 'Debe crear al menos un técnico activo antes de crear tickets.'
-            }, status=status.HTTP_400_BAD_REQUEST)  # cumple CA 8
+            }, status=status.HTTP_400_BAD_REQUEST)
         
         return super().create(request, *args, **kwargs)
 
@@ -59,12 +60,17 @@ class ChangeTechnicianAV(UpdateAPIView):
     def put(self, request, *args, **kwargs):
         ticket = self.get_object()
         serializer = self.get_serializer(data=request.data)
-        
+
         if serializer.is_valid():
             new_technician = serializer.validated_data['documento_tecnico']
+            old_technician = ticket.tecnico
+            
             ticket.tecnico = new_technician
             ticket.save()
-            
+
+            # Enviar notificaciones de cambio de técnico
+            NotificationService.enviar_tecnico_cambiado(ticket, old_technician)
+
             return Response({
                 'message': 'Técnico actualizado correctamente',
                 'ticket_id': ticket.pk,
@@ -74,7 +80,7 @@ class ChangeTechnicianAV(UpdateAPIView):
                     'nombre': f"{new_technician.first_name} {new_technician.last_name}"
                 }
             }, status=status.HTTP_200_OK)
-        
+
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
@@ -125,7 +131,6 @@ class StateChangeAV(UpdateAPIView):
                     'message': 'Debe proporcionar user_document como parámetro de consulta'
                 }, status=status.HTTP_400_BAD_REQUEST)
         
-        # Validar que el usuario sea el técnico asignado al ticket
         if ticket.tecnico != user:
             return Response({
                 'error': 'No autorizado',
@@ -138,7 +143,6 @@ class StateChangeAV(UpdateAPIView):
             to_state = serializer.validated_data['to_state']
             reason = serializer.validated_data.get('reason', '')
             
-            # Si el estado destino es final, crear solicitud de aprobación
             if to_state.es_final:
                 state_request = StateChangeRequest.objects.create(
                     ticket=ticket,
@@ -148,8 +152,8 @@ class StateChangeAV(UpdateAPIView):
                     reason=reason
                 )
                 
-                # TODO: Enviar notificación al administrador
-                # send_state_change_notification(state_request)
+                # Enviar notificación al administrador
+                NotificationService.enviar_solicitud_cambio_estado(state_request)
                 
                 return Response({
                     'message': 'Solicitud de cambio de estado enviada para aprobación',
@@ -158,7 +162,6 @@ class StateChangeAV(UpdateAPIView):
                     'to_state': to_state.nombre
                 }, status=status.HTTP_202_ACCEPTED)
             else:
-                # Cambio directo si no es estado final
                 ticket.estado = to_state
                 ticket.save()
                 
@@ -222,8 +225,11 @@ class StateApprovalAV(UpdateAPIView):
                 state_request.approved_at = timezone.now()
                 state_request.save()
                 
-                # TODO: Enviar notificación al técnico
-                # send_approval_notification(state_request)
+                # Enviar notificación al técnico
+                NotificationService.enviar_aprobacion_cambio_estado(state_request)
+                
+                if state_request.to_state.es_final:
+                    NotificationService.enviar_ticket_cerrado(state_request.ticket, state_request)
                 
                 return Response({
                     'message': 'Cambio de estado aprobado y aplicado',
@@ -240,8 +246,8 @@ class StateApprovalAV(UpdateAPIView):
                 state_request.rejection_reason = rejection_reason
                 state_request.save()
                 
-                # TODO: Enviar notificación al técnico
-                # send_rejection_notification(state_request)
+                # Enviar notificación al técnico
+                NotificationService.enviar_rechazo_cambio_estado(state_request)
                 
                 return Response({
                     'message': 'Solicitud de cambio de estado rechazada',

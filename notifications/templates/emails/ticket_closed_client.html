@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ subject }}</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f4f4f4;
+        }
+        .container {
+            background-color: #ffffff;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .header {
+            background-color: #27ae60;
+            color: white;
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .ticket-info {
+            background-color: #ecf0f1;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+        .closure-info {
+            background-color: #d5f4e6;
+            border-left: 4px solid #27ae60;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        .state-transition {
+            background-color: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+            text-align: center;
+        }
+        .approval-message {
+            background-color: #e8f5e8;
+            border: 1px solid #27ae60;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 15px 0;
+        }
+        .footer {
+            text-align: center;
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid #eee;
+            color: #666;
+            font-size: 12px;
+        }
+        .status-badge {
+            display: inline-block;
+            padding: 8px 15px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: bold;
+            text-transform: uppercase;
+        }
+        .status-from {
+            background-color: #f39c12;
+            color: white;
+        }
+        .status-to {
+            background-color: #27ae60;
+            color: white;
+        }
+        .success-icon {
+            font-size: 24px;
+            color: #27ae60;
+            margin-right: 10px;
+        }
+        .arrow {
+            font-size: 20px;
+            color: #3498db;
+            margin: 0 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>✅ Ticket Finalizado</h1>
+            <p>Sistema de Gestión de Tickets</p>
+        </div>
+
+        <h2>Hola {{ usuario.first_name|default:usuario.email }},</h2>
+        
+        <p>¡Excelente noticia! Tu ticket ha sido <strong>finalizado exitosamente</strong> y está listo para ser cerrado.</p>
+
+        <div class="closure-info">
+            <h3><span class="success-icon">✓</span> Ticket Finalizado</h3>
+            <p><strong>Estado Final:</strong> <span class="status-badge status-to">{{ datos_adicionales.estado_final|default:"Finalizado" }}</span></p>
+            <p><strong>Fecha de Finalización:</strong> {{ "now"|date:"d/m/Y H:i" }}</p>
+            <p><strong>Finalizado por:</strong> {{ datos_adicionales.approved_by|default:"Administrador" }}</p>
+        </div>
+
+        {% if datos_adicionales.approval_message %}
+        <div class="approval-message">
+            <h3>📝 Mensaje de Aprobación</h3>
+            <p><em>"{{ datos_adicionales.approval_message }}"</em></p>
+        </div>
+        {% endif %}
+
+        <div class="state-transition">
+            <h3>🔄 Proceso de Finalización</h3>
+            <p>
+                <span class="status-badge status-from">{{ datos_adicionales.estado_anterior|default:"Estado Anterior" }}</span>
+                <span class="arrow">→</span>
+                <span class="status-badge status-to">{{ datos_adicionales.estado_final|default:"Finalizado" }}</span>
+            </p>
+        </div>
+
+        <div class="ticket-info">
+            <h3>📋 Información del Ticket</h3>
+            <p><strong>ID del Ticket:</strong> #{{ ticket.pk }}</p>
+            <p><strong>Título:</strong> {{ ticket.titulo }}</p>
+            <p><strong>Cliente:</strong> {{ ticket.cliente.get_full_name|default:ticket.cliente.email }}</p>
+            <p><strong>Fecha de Creación:</strong> {{ ticket.fecha|date:"d/m/Y H:i" }}</p>
+            <p><strong>Técnico Asignado:</strong> {{ ticket.tecnico.get_full_name|default:ticket.tecnico.email }}</p>
+        </div>
+
+        <div style="text-align: center; margin: 30px 0;">
+            <p><strong>🎉 ¡Gracias por usar nuestros servicios!</strong></p>
+            <p>El ticket ha sido completado exitosamente. Si tienes alguna consulta adicional, no dudes en crear un nuevo ticket.</p>
+        </div>
+
+        <div class="footer">
+            <p>Este es un mensaje automático del Sistema de Gestión de Tickets.</p>
+            <p>Fecha: {{ "now"|date:"d/m/Y H:i" }}</p>
+        </div>
+    </div>
+</body>
+</html>

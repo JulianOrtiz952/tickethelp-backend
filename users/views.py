@@ -20,7 +20,6 @@ from .serializers import (
 )
 User = get_user_model()
 
-# Verifica si quien va hacer la acción es un administrador
 class IsAdmin(permissions.BasePermission):
     def has_permission(self, request, view) -> bool:
         user = request.user
@@ -29,7 +28,7 @@ class IsAdmin(permissions.BasePermission):
 # Maneja las vistas para los usuarios
 class UserViewSet(viewsets.ModelViewSet):
     queryset = User.objects.all()
-    permission_classes = [permissions.AllowAny] # Para probar los endpoints sin autenticación, quitar y colocar IsAdmin en producción
+    permission_classes = [permissions.AllowAny]
 
     def get_serializer_class(self):
         if self.action == 'create':
@@ -40,7 +39,6 @@ class UserViewSet(viewsets.ModelViewSet):
             return UserDeactivateSerializer
         return UserReadSerializer
 
-    # Sirve para crear usuarios
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -54,7 +52,6 @@ class UserViewSet(viewsets.ModelViewSet):
             headers=headers
         )
         
-    # Sirve para actualizar usuarios
     def update(self, request, *args, **kwargs):
         instance = self.get_object()
         serializer = self.get_serializer(instance, data=request.data)
@@ -64,7 +61,6 @@ class UserViewSet(viewsets.ModelViewSet):
             "message": "Usuario actualizado exitosamente"
         }, status=status.HTTP_200_OK)
 
-    # Sirve para eliminar usuarios
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
         user_data = UserReadSerializer(instance).data
@@ -81,7 +77,6 @@ class UserViewSet(viewsets.ModelViewSet):
             "Message": "Usuario eliminado correctamente"
                 },status=status.HTTP_204_NO_CONTENT)
 
-    # Sirve para desactivar usuarios en vez de eliminarlos si tienen tickets activos
     @action(detail=True, methods=['post'])
     def deactivate(self, request, pk=None):
         try:
@@ -101,7 +96,6 @@ class UserViewSet(viewsets.ModelViewSet):
 
         except User.DoesNotExist:
             return Response({"detail": "Usuario no encontrado."}, status=status.HTTP_404_NOT_FOUND)
-    # Sirve para activar el usuario de nuevo
     @action(detail=True, methods=['post'])
     def activate(self, request, pk=None):
         user = self.get_object()
@@ -210,7 +204,6 @@ def get_client_by_document(request, document):
         # Intentar buscar el cliente por documento
         client = User.objects.get(document=document, role=User.Role.CLIENT)
         
-        # Si se encuentra, serializarlo y retornarlo
         serializer = UserReadSerializer(client)
         return Response({
             "success": True,
@@ -219,7 +212,6 @@ def get_client_by_document(request, document):
         }, status=status.HTTP_200_OK)
         
     except User.DoesNotExist:
-        # Si no existe el cliente, retornar mensaje específico
         return Response({
             "success": False,
             "message": f"El cliente con documento {document} no existe en el sistema",

@@ -2,6 +2,17 @@ from rest_framework import serializers
 from .models import Notification, NotificationType
 
 
+class NotificationUpdateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Notification
+        fields = ['estado']
+        
+    def update(self, instance, validated_data):
+        if validated_data.get('estado') == Notification.Estado.LEIDA:
+            instance.marcar_como_leida()
+        return instance
+
+
 class NotificationTypeSerializer(serializers.ModelSerializer):
     class Meta:
         model = NotificationType
@@ -12,18 +23,20 @@ class NotificationSerializer(serializers.ModelSerializer):
     tipo_nombre = serializers.CharField(source='tipo.nombre', read_only=True)
     tipo_codigo = serializers.CharField(source='tipo.codigo', read_only=True)
     mensaje = serializers.SerializerMethodField(read_only=True)
-    # Nested recipient and sender objects
     usuario = serializers.SerializerMethodField(read_only=True)
     enviado_por = serializers.SerializerMethodField(read_only=True)
     
     destinatarios = serializers.SerializerMethodField(read_only=True)
+    old_technician_info = serializers.SerializerMethodField()
+    new_technician_info = serializers.SerializerMethodField()
 
     class Meta:
         model = Notification
         fields = [
             'id', 'mensaje', 'estado', 'fecha_creacion',
             'fecha_envio',
-            'tipo_nombre', 'tipo_codigo', 'usuario', 'enviado_por', 'destinatarios'
+            'tipo_nombre', 'tipo_codigo', 'usuario', 'enviado_por', 'destinatarios',
+            'old_technician_info', 'new_technician_info'
         ]
 
     def get_usuario(self, obj):
@@ -49,7 +62,6 @@ class NotificationSerializer(serializers.ModelSerializer):
         }
 
     def get_mensaje(self, obj):
-        # Usa el mensaje específico de la notificación si existe, sino la descripción del tipo
         if getattr(obj, 'mensaje', None):
             return obj.mensaje
         return getattr(obj.tipo, 'descripcion', '')
@@ -65,6 +77,31 @@ class NotificationSerializer(serializers.ModelSerializer):
             }
             for u in users
         ]
+    
+    def get_old_technician_info(self, obj):
+        """Obtiene información del técnico anterior si está disponible."""
+        if obj.datos_adicionales and 'old_technician' in obj.datos_adicionales:
+            old_tech = obj.datos_adicionales['old_technician']
+            if old_tech:  # Es un diccionario o None
+                return old_tech
+        return None
+    
+    def get_new_technician_info(self, obj):
+        """Obtiene información del nuevo técnico si está disponible."""
+        if obj.datos_adicionales and 'new_technician' in obj.datos_adicionales:
+            new_tech = obj.datos_adicionales['new_technician']
+            if new_tech:  # Es un diccionario
+                return new_tech
+        elif obj.ticket and obj.ticket.tecnico:
+            tech = obj.ticket.tecnico
+            return {
+                'id': tech.pk,
+                'nombre': tech.get_full_name(),
+                'email': tech.email,
+                'documento': tech.document,
+                'telefono': tech.number
+            }
+        return None
 
 
 class NotificationListSerializer(serializers.ModelSerializer):
@@ -191,7 +228,6 @@ class CreateNotificationSerializer(serializers.ModelSerializer):
         # Obtener tipo de notificación
         tipo = NotificationType.objects.get(codigo=validated_data['tipo_codigo'])
 
-        # Obtener ticket si se proporciona
         ticket = None
         if validated_data.get('ticket_id'):
             ticket = Ticket.objects.get(id=validated_data['ticket_id'])
@@ -208,7 +244,6 @@ class CreateNotificationSerializer(serializers.ModelSerializer):
         else:
             raise serializers.ValidationError('Se requiere autenticación del emisor')
 
-        # Crear notificación (usuario campo se mantiene por compatibilidad, usamos el primero si existe)
         primary_user = destinatarios[0] if destinatarios else None
         notification = Notification.objects.create(
             usuario=primary_user,
@@ -224,8 +259,6 @@ class CreateNotificationSerializer(serializers.ModelSerializer):
             enviado_por_role=enviado_por_role
         )
 
-        # Asignar destinatarios M2M
         if destinatarios:
             notification.destinatarios.set(destinatarios)
-
-        return notification
+    

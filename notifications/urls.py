@@ -15,4 +15,10 @@ urlpatterns = [
     
     # Tipos de notificaciones disponibles
     path('types/', views.notification_types, name='notification-types'),
+    
+    # Historial de notificaciones de usuario
+    path('user-notifications/', views.UserNotificationsAV.as_view(), name='user-notifications'),
+    
+    # Marcar notificación como leída
+    path('<int:notification_id>/mark-read/', views.NotificationMarkAsReadAV.as_view(), name='notification-mark-read'),
 ]

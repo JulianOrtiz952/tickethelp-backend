@@ -14,11 +14,9 @@ logger = logging.getLogger(__name__)
 
 
 class NotificationService:
-    """Manejo central de notificaciones."""
     
     @classmethod
     def enviar_notificacion_ticket_creado(cls, ticket: Ticket) -> Dict[str, Any]:
-        """Notifica al crear un ticket."""
         resultados = {
             'emails_enviados': 0,
             'emails_fallidos': 0,
@@ -50,7 +48,6 @@ class NotificationService:
     
     @classmethod
     def enviar_notificacion_estado_cambiado(cls, ticket: Ticket, estado_anterior: str) -> Dict[str, Any]:
-        """Envía notificaciones cuando cambia el estado de un ticket."""
         resultados = {
             'emails_enviados': 0,
             'emails_fallidos': 0,
@@ -76,7 +73,6 @@ class NotificationService:
     
     @classmethod
     def enviar_solicitud_finalizacion(cls, ticket: Ticket) -> Dict[str, Any]:
-        """Envía notificación al administrador cuando se solicita finalizar un ticket."""
         resultados = {
             'emails_enviados': 0,
             'emails_fallidos': 0,
@@ -103,7 +99,6 @@ class NotificationService:
     
     @classmethod
     def enviar_ticket_finalizado(cls, ticket: Ticket) -> Dict[str, Any]:
-        """Envía notificaciones cuando un ticket es finalizado."""
         resultados = {
             'emails_enviados': 0,
             'emails_fallidos': 0,
@@ -135,8 +130,153 @@ class NotificationService:
         return resultados
     
     @classmethod
+    def enviar_solicitud_cambio_estado(cls, state_request) -> Dict[str, Any]:
+        resultados = {
+            'emails_enviados': 0,
+            'emails_fallidos': 0,
+            'notificaciones_internas': 0,
+            'errores': []
+        }
+        
+        try:
+            administradores = User.objects.filter(role=User.Role.ADMIN, is_active=True)
+            
+            for admin in administradores:
+                cls._enviar_notificacion_admin(
+                    state_request.ticket, 'solicitud_cambio_estado',
+                    'Solicitud de cambio de estado',
+                    f'El técnico {state_request.requested_by.get_full_name()} solicita cambiar el estado del ticket #{state_request.ticket.pk} de "{state_request.from_state.nombre}" a "{state_request.to_state.nombre}".',
+                    resultados,
+                    datos_adicionales={
+                        'state_request_id': state_request.id,
+                        'from_state': state_request.from_state.nombre,
+                        'to_state': state_request.to_state.nombre,
+                        'reason': state_request.reason
+                    }
+                )
+                
+        except Exception as e:
+            logger.error(f"Error enviando solicitud de cambio de estado: {e}")
+            resultados['errores'].append(str(e))
+        
+        return resultados
+    
+    @classmethod
+    def enviar_aprobacion_cambio_estado(cls, state_request) -> Dict[str, Any]:
+        resultados = {
+            'emails_enviados': 0,
+            'emails_fallidos': 0,
+            'notificaciones_internas': 0,
+            'errores': []
+        }
+        
+        try:
+            cls._enviar_notificacion_tecnico(
+                state_request.ticket, 'cambio_estado_aprobado',
+                'Solicitud de cambio de estado aprobada',
+                f'Su solicitud para cambiar el estado del ticket #{state_request.ticket.pk} a "{state_request.to_state.nombre}" ha sido aprobada.',
+                resultados,
+                usuario_destino=state_request.requested_by,
+                datos_adicionales={
+                    'state_request_id': state_request.id,
+                    'approved_by': state_request.approved_by.get_full_name() if state_request.approved_by else 'Sistema',
+                    'new_state': state_request.to_state.nombre
+                }
+            )
+                
+        except Exception as e:
+            logger.error(f"Error enviando aprobación de cambio de estado: {e}")
+            resultados['errores'].append(str(e))
+        
+        return resultados
+    
+    @classmethod
+    def enviar_rechazo_cambio_estado(cls, state_request) -> Dict[str, Any]:
+        resultados = {
+            'emails_enviados': 0,
+            'emails_fallidos': 0,
+            'notificaciones_internas': 0,
+            'errores': []
+        }
+        
+        try:
+            cls._enviar_notificacion_tecnico(
+                state_request.ticket, 'cambio_estado_rechazado',
+                'Solicitud de cambio de estado rechazada',
+                f'Su solicitud para cambiar el estado del ticket #{state_request.ticket.pk} a "{state_request.to_state.nombre}" ha sido rechazada. Razón: {state_request.rejection_reason}',
+                resultados,
+                usuario_destino=state_request.requested_by,
+                datos_adicionales={
+                    'state_request_id': state_request.id,
+                    'from_state': state_request.from_state.nombre,
+                    'to_state': state_request.to_state.nombre,
+                    'rejected_by': state_request.approved_by.get_full_name() if state_request.approved_by else 'Sistema',
+                    'rejection_reason': state_request.rejection_reason
+                }
+            )
+                
+        except Exception as e:
+            logger.error(f"Error enviando rechazo de cambio de estado: {e}")
+            resultados['errores'].append(str(e))
+        
+        return resultados
+    
+    @classmethod
+    def enviar_ticket_cerrado(cls, ticket: Ticket, state_request=None) -> Dict[str, Any]:
+        resultados = {
+            'emails_enviados': 0,
+            'emails_fallidos': 0,
+            'notificaciones_internas': 0,
+            'errores': []
+        }
+        
+        try:
+            # Obtener información del estado anterior y mensaje de aprobación
+            estado_anterior = state_request.from_state.nombre if state_request else "Estado Anterior"
+            estado_final = ticket.estado.nombre
+            approved_by = state_request.approved_by.get_full_name() if state_request and state_request.approved_by else "Administrador"
+            approval_message = state_request.reason if state_request else None
+            
+            # Notificar al cliente
+            if ticket.cliente:
+                cls._enviar_notificacion_cliente(
+                    ticket, 'ticket_cerrado',
+                    'Ticket finalizado',
+                    f'Su ticket #{ticket.pk} "{ticket.titulo}" ha sido finalizado exitosamente.',
+                    resultados,
+                    datos_adicionales={
+                        'estado_anterior': estado_anterior,
+                        'estado_final': estado_final,
+                        'approved_by': approved_by,
+                        'approval_message': approval_message,
+                        'fecha_cierre': ticket.estado.updated_at if hasattr(ticket.estado, 'updated_at') else None
+                    }
+                )
+            
+            # Notificar al técnico
+            if ticket.tecnico:
+                cls._enviar_notificacion_tecnico(
+                    ticket, 'ticket_cerrado',
+                    'Ticket finalizado',
+                    f'El ticket #{ticket.pk} "{ticket.titulo}" que tenía asignado ha sido finalizado exitosamente.',
+                    resultados,
+                    datos_adicionales={
+                        'estado_anterior': estado_anterior,
+                        'estado_final': estado_final,
+                        'approved_by': approved_by,
+                        'approval_message': approval_message,
+                        'fecha_cierre': ticket.estado.updated_at if hasattr(ticket.estado, 'updated_at') else None
+                    }
+                )
+                
+        except Exception as e:
+            logger.error(f"Error enviando notificaciones de ticket cerrado: {e}")
+            resultados['errores'].append(str(e))
+        
+        return resultados
+    
+    @classmethod
     def enviar_tecnico_cambiado(cls, ticket: Ticket, tecnico_anterior: Optional[User]) -> Dict[str, Any]:
-        """Envía notificaciones cuando se cambia el técnico asignado."""
         resultados = {
             'emails_enviados': 0,
             'emails_fallidos': 0,
@@ -151,15 +291,47 @@ class NotificationService:
                     'Ticket reasignado',
                     f'El ticket #{ticket.pk} ha sido reasignado a otro técnico.',
                     resultados,
-                    usuario_destino=tecnico_anterior
+                    usuario_destino=tecnico_anterior,
+                    datos_adicionales={
+                        'old_technician': {
+                            'id': tecnico_anterior.pk,
+                            'nombre': tecnico_anterior.get_full_name(),
+                            'email': tecnico_anterior.email,
+                            'documento': tecnico_anterior.document,
+                            'telefono': tecnico_anterior.number
+                        },
+                        'new_technician': {
+                            'id': ticket.tecnico.pk,
+                            'nombre': ticket.tecnico.get_full_name(),
+                            'email': ticket.tecnico.email,
+                            'documento': ticket.tecnico.document,
+                            'telefono': ticket.tecnico.number
+                        }
+                    }
                 )
             
             if ticket.tecnico:
                 cls._enviar_notificacion_tecnico(
-                    ticket, 'ticket_asignado',
-                    'Nuevo ticket asignado',
-                    'Se le ha asignado un nuevo ticket.',
-                    resultados
+                    ticket, 'tecnico_cambiado',
+                    'Ticket reasignado',
+                    'Se le ha asignado un ticket que estaba con otro técnico.',
+                    resultados,
+                    datos_adicionales={
+                        'old_technician': {
+                            'id': tecnico_anterior.pk,
+                            'nombre': tecnico_anterior.get_full_name(),
+                            'email': tecnico_anterior.email,
+                            'documento': tecnico_anterior.document,
+                            'telefono': tecnico_anterior.number
+                        } if tecnico_anterior else None,
+                        'new_technician': {
+                            'id': ticket.tecnico.pk,
+                            'nombre': ticket.tecnico.get_full_name(),
+                            'email': ticket.tecnico.email,
+                            'documento': ticket.tecnico.document,
+                            'telefono': ticket.tecnico.number
+                        }
+                    }
                 )
                 
         except Exception as e:
@@ -172,7 +344,6 @@ class NotificationService:
     def _enviar_notificacion_cliente(cls, ticket: Ticket, tipo_codigo: str, titulo: str, 
                                    mensaje: str, resultados: Dict, usuario_destino: User = None,
                                    datos_adicionales: Dict = None):
-        """Envía notificación al cliente del ticket."""
         usuario = usuario_destino or ticket.cliente
         cls._enviar_notificacion_completa(
             usuario, ticket, tipo_codigo, titulo, mensaje, resultados, datos_adicionales
@@ -182,7 +353,6 @@ class NotificationService:
     def _enviar_notificacion_tecnico(cls, ticket: Ticket, tipo_codigo: str, titulo: str,
                                    mensaje: str, resultados: Dict, usuario_destino: User = None,
                                    datos_adicionales: Dict = None):
-        """Envía notificación al técnico del ticket."""
         usuario = usuario_destino or ticket.tecnico
         cls._enviar_notificacion_completa(
             usuario, ticket, tipo_codigo, titulo, mensaje, resultados, datos_adicionales
@@ -192,7 +362,6 @@ class NotificationService:
     def _enviar_notificacion_admin(cls, ticket: Ticket, tipo_codigo: str, titulo: str,
                                  mensaje: str, resultados: Dict, usuario_destino: User = None,
                                  datos_adicionales: Dict = None):
-        """Envía notificación al administrador."""
         usuario = usuario_destino or ticket.administrador
         cls._enviar_notificacion_completa(
             usuario, ticket, tipo_codigo, titulo, mensaje, resultados, datos_adicionales
@@ -202,13 +371,9 @@ class NotificationService:
     def _enviar_notificacion_completa(cls, usuario: User, ticket: Ticket, tipo_codigo: str,
                                     titulo: str, mensaje: str, resultados: Dict,
                                     datos_adicionales: Dict = None):
-        """Envía tanto la notificación por email como la notificación interna."""
-        # Verificación robusta de existencia y validez del usuario
         if not cls._validar_usuario_para_notificacion(usuario):
             logger.warning(f"Usuario inválido para notificación: {usuario}")
             return
-        
-        # Crear notificación interna
         cls._crear_notificacion_interna(
             usuario, ticket, tipo_codigo, titulo, mensaje, datos_adicionales
         )
@@ -216,6 +381,8 @@ class NotificationService:
         
         # Enviar email
         try:
+            if datos_adicionales:
+                ticket._notification_data = datos_adicionales
             cls._enviar_email(usuario, ticket, tipo_codigo, titulo, mensaje)
             resultados['emails_enviados'] += 1
         except Exception as e:
@@ -226,7 +393,6 @@ class NotificationService:
     @classmethod
     def _crear_notificacion_interna(cls, usuario: User, ticket: Ticket, tipo_codigo: str,
                                   titulo: str, mensaje: str, datos_adicionales: Dict = None):
-        """Crea una notificación interna en la base de datos."""
         try:
             tipo_notificacion, created = NotificationType.objects.get_or_create(
                 codigo=tipo_codigo,
@@ -239,7 +405,7 @@ class NotificationService:
                 }
             )
             
-            Notification.objects.create(
+            notification = Notification.objects.create(
                 usuario=usuario,
                 ticket=ticket,
                 tipo=tipo_notificacion,
@@ -249,24 +415,16 @@ class NotificationService:
                 estado=Notification.Estado.ENVIADA,
                 fecha_envio=timezone.now()
             )
-            # Asegurar que la notificación tenga los destinatarios correctos
-            # basados en la configuración del tipo de notificación y las
-            # relaciones del ticket (cliente, técnico, administrador).
-            # Rebuscar la notificación recién creada para asignar M2M.
             try:
                 notif = Notification.objects.filter(ticket=ticket, tipo=tipo_notificacion, titulo=titulo).order_by('-fecha_creacion').first()
                 if notif:
                     destinatarios = []
-                    # si el tipo indica enviar a cliente
                     if tipo_notificacion.enviar_a_cliente and ticket.cliente:
                         destinatarios.append(ticket.cliente)
-                    # si indica enviar a técnico
                     if tipo_notificacion.enviar_a_tecnico and ticket.tecnico:
                         destinatarios.append(ticket.tecnico)
-                    # si indica enviar a admin
                     if tipo_notificacion.enviar_a_admin and ticket.administrador:
                         destinatarios.append(ticket.administrador)
-                    # siempre incluir el usuario objetivo pasado si no está ya
                     if usuario and usuario not in destinatarios:
                         destinatarios.append(usuario)
 
@@ -281,7 +439,6 @@ class NotificationService:
     @classmethod
     def _enviar_email(cls, usuario: User, ticket: Ticket, tipo_codigo: str,
                      titulo: str, mensaje: str):
-        """Envía un email de notificación usando plantillas HTML personalizadas."""
         if not hasattr(settings, 'EMAIL_HOST') or not settings.EMAIL_HOST:
             logger.warning("Configuración de email no encontrada, saltando envío de email")
             return
@@ -298,16 +455,14 @@ class NotificationService:
             'subject': subject,
             'titulo': titulo,
             'mensaje': mensaje,
+            'datos_adicionales': getattr(ticket, '_notification_data', {}),
         }
         
         try:
-            # Renderizar plantilla HTML
             html_content = render_to_string(template_html, context)
             
-            # Crear mensaje de texto plano como fallback
             text_content = cls._generar_contenido_texto_plano(usuario, ticket, titulo, mensaje)
             
-            # Crear email con contenido HTML y texto plano
             email = EmailMultiAlternatives(
                 subject=subject,
                 body=text_content,
@@ -315,43 +470,35 @@ class NotificationService:
                 to=[usuario.email]
             )
             
-            # Adjuntar versión HTML
             email.attach_alternative(html_content, "text/html")
             
-            # Enviar email
             email.send()
             
         except Exception as e:
             logger.error(f"Error renderizando plantilla HTML para {usuario.email}: {e}")
-            # Fallback a email de texto plano si falla la plantilla HTML
             cls._enviar_email_texto_plano(usuario, ticket, titulo, mensaje)
     
     @classmethod
     def _obtener_plantilla_html(cls, usuario: User, tipo_codigo: str) -> str:
-        """Determina qué plantilla HTML usar según el tipo de usuario y notificación."""
-        # Mapeo de plantillas por tipo de usuario y código de notificación
         plantillas = {
-            # Cliente
             (User.Role.CLIENT, 'ticket_creado'): 'emails/ticket_created_client.html',
             (User.Role.CLIENT, 'estado_cambiado'): 'emails/ticket_state_changed_client.html',
             (User.Role.CLIENT, 'ticket_finalizado'): 'emails/ticket_state_changed_client.html',
-            
-            # Técnico
+            (User.Role.CLIENT, 'ticket_cerrado'): 'emails/ticket_closed_client.html',
             (User.Role.TECH, 'ticket_creado'): 'emails/ticket_created_technician.html',
             (User.Role.TECH, 'ticket_asignado'): 'emails/ticket_assigned_technician.html',
             (User.Role.TECH, 'ticket_finalizado'): 'emails/ticket_created_technician.html',
-            (User.Role.TECH, 'tecnico_cambiado'): 'emails/ticket_assigned_technician.html',
-            
-            # Administrador
+            (User.Role.TECH, 'ticket_cerrado'): 'emails/ticket_created_technician.html',
+            (User.Role.TECH, 'tecnico_cambiado'): 'emails/technician_changed.html',
+            (User.Role.TECH, 'cambio_estado_aprobado'): 'emails/state_change_approved_technician.html',
+            (User.Role.TECH, 'cambio_estado_rechazado'): 'emails/state_change_rejected_technician.html',
             (User.Role.ADMIN, 'ticket_creado'): 'emails/ticket_created_admin.html',
             (User.Role.ADMIN, 'solicitud_finalizacion'): 'emails/ticket_created_admin.html',
+            (User.Role.ADMIN, 'solicitud_cambio_estado'): 'emails/state_change_request_admin.html',
         }
         
-        # Buscar plantilla específica
         plantilla = plantillas.get((usuario.role, tipo_codigo))
-        
         if not plantilla:
-            # Plantilla por defecto según el tipo de usuario
             if usuario.role == User.Role.CLIENT:
                 plantilla = 'emails/ticket_created_client.html'
             elif usuario.role == User.Role.TECH:
@@ -359,13 +506,11 @@ class NotificationService:
             elif usuario.role == User.Role.ADMIN:
                 plantilla = 'emails/ticket_created_admin.html'
             else:
-                plantilla = 'emails/ticket_created_client.html'  # Fallback
-        
+                plantilla = 'emails/ticket_created_client.html'
         return plantilla
     
     @classmethod
     def _generar_contenido_texto_plano(cls, usuario: User, ticket: Ticket, titulo: str, mensaje: str) -> str:
-        """Genera contenido de texto plano como fallback."""
         return f"""
 {titulo}
 
@@ -387,7 +532,6 @@ Sistema de Tickets
     
     @classmethod
     def _enviar_email_texto_plano(cls, usuario: User, ticket: Ticket, titulo: str, mensaje: str):
-        """Envía email de texto plano como fallback."""
         subject = f"{titulo} - Ticket #{ticket.pk}"
         text_content = cls._generar_contenido_texto_plano(usuario, ticket, titulo, mensaje)
         
@@ -406,7 +550,6 @@ Sistema de Tickets
         Reutiliza patrones de validación del proyecto.
         """
         try:
-            # Verificación básica de existencia
             if not usuario:
                 logger.warning("Usuario es None")
                 return False
@@ -433,7 +576,6 @@ Sistema de Tickets
                     logger.warning(f"Usuario con documento {usuario.document} no existe en la base de datos")
                     return False
             
-            # Verificar que el email sea válido (formato básico)
             if '@' not in usuario.email or '.' not in usuario.email.split('@')[-1]:
                 logger.warning(f"Email {usuario.email} tiene formato inválido")
                 return False

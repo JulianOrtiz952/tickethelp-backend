@@ -30,16 +30,16 @@ class TicketSerializer(serializers.ModelSerializer):
         cli = attrs["cliente"]
 
         if isinstance(tech, list) and len(tech) > 1:
-            raise serializers.ValidationError({"tecnico": "Solo se puede seleccionar un técnico."})  # cumple CA 10
+            raise serializers.ValidationError({"tecnico": "Solo se puede seleccionar un técnico."})
 
         if not tech:
-            raise serializers.ValidationError({"tecnico": "Debe seleccionar un técnico."})  # cumple CA 8
+            raise serializers.ValidationError({"tecnico": "Debe seleccionar un técnico."})
 
         if tech.role != User.Role.TECH:
-            raise serializers.ValidationError({"tecnico": "Debe ser TECH."})  # cumple CA 6
+            raise serializers.ValidationError({"tecnico": "Debe ser TECH."})
         
         if not tech.is_active:
-            raise serializers.ValidationError({"tecnico": "El usuario está desactivado."})  # cumple CA 4
+            raise serializers.ValidationError({"tecnico": "El usuario está desactivado."})
 
         if admin.role != User.Role.ADMIN:
             raise serializers.ValidationError({"administrador": "Debe ser ADMIN."})
@@ -83,22 +83,22 @@ class ChangeTechnicianSerializer(serializers.Serializer):
 
     def validate_documento_tecnico(self, value):
         if not value or value.strip() == "":
-            raise serializers.ValidationError("Debe proporcionar el documento del técnico.")  # cumple CA 9
+            raise serializers.ValidationError("Debe proporcionar el documento del técnico.")
         
         try:
             tecnico = User.objects.get(document=value, role=User.Role.TECH)
         except User.DoesNotExist:
-            raise serializers.ValidationError("No existe un técnico con ese documento.")  # cumple CA 13
+            raise serializers.ValidationError("No existe un técnico con ese documento.")
         
         if not tecnico.is_active:
-            raise serializers.ValidationError("El técnico está desactivado.")  # cumple CA 5 y 7
+            raise serializers.ValidationError("El técnico está desactivado.")
         
         return tecnico
 
     def validate(self, attrs):
         documento = attrs.get('documento_tecnico')
         if isinstance(documento, list) and len(documento) > 1:
-            raise serializers.ValidationError({"documento_tecnico": "Solo se puede seleccionar un técnico."})  # cumple CA 11
+            raise serializers.ValidationError({"documento_tecnico": "Solo se puede seleccionar un técnico."})
         
         return attrs
 

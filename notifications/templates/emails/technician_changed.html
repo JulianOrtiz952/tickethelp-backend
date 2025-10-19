@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ subject }}</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f4f4f4;
+        }
+        .container {
+            background-color: #ffffff;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .header {
+            background-color: #9b59b6;
+            color: white;
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .ticket-info {
+            background-color: #ecf0f1;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+        .change-info {
+            background-color: #f3e5f5;
+            border-left: 4px solid #9b59b6;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        .technician-info {
+            background-color: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 15px 0;
+        }
+        .footer {
+            text-align: center;
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid #eee;
+            color: #666;
+            font-size: 12px;
+        }
+        .change-icon {
+            font-size: 24px;
+            color: #9b59b6;
+            margin-right: 10px;
+        }
+        .status-badge {
+            display: inline-block;
+            padding: 5px 10px;
+            border-radius: 15px;
+            font-size: 12px;
+            font-weight: bold;
+            text-transform: uppercase;
+        }
+        .status-assigned {
+            background-color: #27ae60;
+            color: white;
+        }
+        .status-unassigned {
+            background-color: #e74c3c;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔄 Asignación de Técnico Actualizada</h1>
+            <p>Sistema de Gestión de Tickets</p>
+        </div>
+
+        <h2>Hola {{ usuario.first_name|default:usuario.email }},</h2>
+        
+        <p>Se ha realizado un cambio en la asignación del técnico para uno de los tickets.</p>
+
+        <div class="ticket-info">
+            <h3>📋 Información del Ticket</h3>
+            <p><strong>ID del Ticket:</strong> #{{ ticket.pk }}</p>
+            <p><strong>Título:</strong> {{ ticket.titulo }}</p>
+            <p><strong>Cliente:</strong> {{ ticket.cliente.get_full_name|default:ticket.cliente.email }}</p>
+            <p><strong>Estado Actual:</strong> {{ ticket.estado.nombre }}</p>
+        </div>
+
+        <div class="change-info">
+            <h3><span class="change-icon">🔄</span> Cambio de Asignación</h3>
+            <p>Se ha realizado un cambio en la asignación del técnico para este ticket.</p>
+        </div>
+
+        {% if datos_adicionales.old_technician %}
+        <div class="technician-info">
+            <h3>👨‍💼 Técnico Anterior</h3>
+            <p><strong>Nombre Completo:</strong> {{ datos_adicionales.old_technician.get_full_name|default:"No especificado" }}</p>
+            <p><strong>Email:</strong> {{ datos_adicionales.old_technician.email }}</p>
+            <p><strong>Documento:</strong> {{ datos_adicionales.old_technician.document }}</p>
+            <p><strong>Teléfono:</strong> {{ datos_adicionales.old_technician.number|default:"No especificado" }}</p>
+        </div>
+        {% endif %}
+
+        <div class="technician-info">
+            <h3>👨‍💼 Nuevo Técnico Asignado</h3>
+            <p><strong>Nombre Completo:</strong> {{ ticket.tecnico.get_full_name|default:"No especificado" }}</p>
+            <p><strong>Email:</strong> {{ ticket.tecnico.email }}</p>
+            <p><strong>Documento:</strong> {{ ticket.tecnico.document }}</p>
+            <p><strong>Teléfono:</strong> {{ ticket.tecnico.number|default:"No especificado" }}</p>
+        </div>
+
+        <div style="text-align: center; margin: 30px 0;">
+            <p><strong>📞 Próximos Pasos:</strong> El técnico asignado se pondrá en contacto contigo pronto para continuar con el proceso.</p>
+        </div>
+
+        <div class="footer">
+            <p>Este es un mensaje automático del Sistema de Gestión de Tickets.</p>
+            <p>Fecha: {{ "now"|date:"d/m/Y H:i" }}</p>
+        </div>
+    </div>
+</body>
+</html>

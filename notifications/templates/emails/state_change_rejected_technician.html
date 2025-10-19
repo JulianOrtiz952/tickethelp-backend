@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ subject }}</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f4f4f4;
+        }
+        .container {
+            background-color: #ffffff;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .header {
+            background-color: #e74c3c;
+            color: white;
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .ticket-info {
+            background-color: #ecf0f1;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+        .rejection-info {
+            background-color: #fdf2f2;
+            border-left: 4px solid #e74c3c;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        .state-transition {
+            background-color: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+            text-align: center;
+        }
+        .rejection-message {
+            background-color: #fff3cd;
+            border: 1px solid #ffeaa7;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 15px 0;
+        }
+        .footer {
+            text-align: center;
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid #eee;
+            color: #666;
+            font-size: 12px;
+        }
+        .status-badge {
+            display: inline-block;
+            padding: 8px 15px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: bold;
+            text-transform: uppercase;
+        }
+        .status-from {
+            background-color: #f39c12;
+            color: white;
+        }
+        .status-requested {
+            background-color: #e74c3c;
+            color: white;
+        }
+        .warning-icon {
+            font-size: 24px;
+            color: #e74c3c;
+            margin-right: 10px;
+        }
+        .arrow {
+            font-size: 20px;
+            color: #3498db;
+            margin: 0 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>❌ Solicitud Rechazada</h1>
+            <p>Sistema de Gestión de Tickets</p>
+        </div>
+
+        <h2>Hola {{ usuario.first_name|default:usuario.email }},</h2>
+        
+        <p>Lamentamos informarte que tu solicitud de cambio de estado ha sido <strong>rechazada</strong> por el administrador.</p>
+
+        <div class="rejection-info">
+            <h3><span class="warning-icon">⚠</span> Solicitud Rechazada</h3>
+            <p><strong>Estado Solicitado:</strong> <span class="status-badge status-requested">{{ datos_adicionales.to_state|default:"Estado Solicitado" }}</span></p>
+            <p><strong>Rechazado por:</strong> {{ datos_adicionales.rejected_by|default:"Administrador" }}</p>
+            <p><strong>Fecha de Rechazo:</strong> {{ "now"|date:"d/m/Y H:i" }}</p>
+        </div>
+
+        {% if datos_adicionales.rejection_reason %}
+        <div class="rejection-message">
+            <h3>📝 Razón del Rechazo</h3>
+            <p><em>"{{ datos_adicionales.rejection_reason }}"</em></p>
+        </div>
+        {% endif %}
+
+        <div class="state-transition">
+            <h3>🔄 Solicitud de Cambio</h3>
+            <p>
+                <span class="status-badge status-from">{{ datos_adicionales.from_state|default:"Estado Actual" }}</span>
+                <span class="arrow">→</span>
+                <span class="status-badge status-requested">{{ datos_adicionales.to_state|default:"Estado Solicitado" }}</span>
+            </p>
+        </div>
+
+        <div class="ticket-info">
+            <h3>📋 Información del Ticket</h3>
+            <p><strong>ID del Ticket:</strong> #{{ ticket.pk }}</p>
+            <p><strong>Título:</strong> {{ ticket.titulo }}</p>
+            <p><strong>Cliente:</strong> {{ ticket.cliente.get_full_name|default:ticket.cliente.email }}</p>
+            <p><strong>Estado Actual:</strong> {{ ticket.estado.nombre }}</p>
+        </div>
+
+        <div style="text-align: center; margin: 30px 0;">
+            <p><strong>💡 Recomendación:</strong> Revisa la razón del rechazo y considera hacer una nueva solicitud con la información correcta.</p>
+            <p>Si necesitas aclaraciones, puedes contactar al administrador.</p>
+        </div>
+
+        <div class="footer">
+            <p>Este es un mensaje automático del Sistema de Gestión de Tickets.</p>
+            <p>ID de Solicitud: #{{ datos_adicionales.state_request_id }}</p>
+            <p>Fecha: {{ "now"|date:"d/m/Y H:i" }}</p>
+        </div>
+    </div>
+</body>
+</html>

@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ subject }}</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f4f4f4;
+        }
+        .container {
+            background-color: #ffffff;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .header {
+            background-color: #27ae60;
+            color: white;
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .ticket-info {
+            background-color: #ecf0f1;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+        .approval-info {
+            background-color: #d5f4e6;
+            border-left: 4px solid #27ae60;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        .footer {
+            text-align: center;
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid #eee;
+            color: #666;
+            font-size: 12px;
+        }
+        .status-badge {
+            display: inline-block;
+            padding: 8px 15px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: bold;
+            text-transform: uppercase;
+            background-color: #27ae60;
+            color: white;
+        }
+        .check-icon {
+            font-size: 24px;
+            color: #27ae60;
+            margin-right: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>✅ Solicitud Aprobada</h1>
+            <p>Sistema de Gestión de Tickets</p>
+        </div>
+
+        <h2>Hola {{ usuario.first_name|default:usuario.email }},</h2>
+        
+        <p>¡Excelente noticia! Tu solicitud de cambio de estado ha sido <strong>aprobada</strong> por el administrador.</p>
+
+        <div class="approval-info">
+            <h3><span class="check-icon">✓</span> Cambio de Estado Aprobado</h3>
+            <p><strong>Nuevo Estado:</strong> <span class="status-badge">{{ datos_adicionales.new_state }}</span></p>
+            <p><strong>Aprobado por:</strong> {{ datos_adicionales.approved_by }}</p>
+            <p><strong>Fecha de Aprobación:</strong> {{ "now"|date:"d/m/Y H:i" }}</p>
+        </div>
+
+        {% if datos_adicionales.approval_message %}
+        <div class="approval-message">
+            <h3>📝 Mensaje de Aprobación</h3>
+            <p><em>"{{ datos_adicionales.approval_message }}"</em></p>
+        </div>
+        {% endif %}
+
+        <div class="ticket-info">
+            <h3>📋 Información del Ticket</h3>
+            <p><strong>ID del Ticket:</strong> #{{ ticket.pk }}</p>
+            <p><strong>Título:</strong> {{ ticket.titulo }}</p>
+            <p><strong>Cliente:</strong> {{ ticket.cliente.get_full_name|default:ticket.cliente.email }}</p>
+        </div>
+
+        <div style="text-align: center; margin: 30px 0;">
+            <p><strong>🎉 ¡El ticket ha sido actualizado exitosamente!</strong></p>
+            <p>El estado del ticket ha cambiado y ya está disponible en el sistema.</p>
+        </div>
+
+        <div class="footer">
+            <p>Este es un mensaje automático del Sistema de Gestión de Tickets.</p>
+            <p>ID de Solicitud: #{{ datos_adicionales.state_request_id }}</p>
+            <p>Fecha: {{ "now"|date:"d/m/Y H:i" }}</p>
+        </div>
+    </div>
+</body>
+</html>

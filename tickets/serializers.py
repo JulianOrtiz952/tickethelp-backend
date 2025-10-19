@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from django.db.models import Count
+from django.db.models import Count, Max
 from django.utils import timezone
 from users.models import User
 from tickets.models import Ticket, Estado, StateChangeRequest
@@ -104,9 +104,34 @@ class ChangeTechnicianSerializer(serializers.Serializer):
 
 
 class ActiveTechnicianSerializer(serializers.ModelSerializer):
+    porcentaje_ocupacion = serializers.SerializerMethodField()
+    
     class Meta:
         model = User
-        fields = ['document', 'email', 'first_name', 'last_name', 'number']
+        fields = ['document', 'email', 'first_name', 'last_name', 'number', 'porcentaje_ocupacion']
+    
+    def get_porcentaje_ocupacion(self, obj):
+        """
+        Calcula el porcentaje de ocupación del técnico basado en sus tickets activos.
+        El porcentaje representa qué parte del total de tickets activos tiene asignado este técnico.
+        """
+        # Obtener tickets activos del técnico actual (excluyendo estados finales)
+        tickets_activos_tecnico = Ticket.objects.filter(
+            tecnico=obj,
+            estado__es_final=False
+        ).count()
+        
+        # Obtener el total de tickets activos en el sistema
+        total_tickets_activos = Ticket.objects.filter(
+            estado__es_final=False
+        ).count()
+        
+        # Calcular el porcentaje del total
+        if total_tickets_activos == 0:
+            return 0.0
+        
+        porcentaje = (tickets_activos_tecnico / total_tickets_activos) * 100
+        return round(porcentaje, 2)
 
 
 class StateChangeSerializer(serializers.Serializer):

@@ -147,7 +147,7 @@ REST_FRAMEWORK = {
 # -----------------------------
 # CORS
 # -----------------------------
-FRONTEND_ORIGIN = os.getenv("FRONTEND_ORIGIN", "http://localhost:3000")
+FRONTEND_ORIGIN = os.getenv("FRONTEND_ORIGIN", "http://localhost:5173")
 CORS_ALLOWED_ORIGINS = [FRONTEND_ORIGIN] if FRONTEND_ORIGIN else []
 CORS_ALLOW_CREDENTIALS = True
 

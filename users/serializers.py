@@ -3,6 +3,8 @@ from rest_framework.validators import UniqueValidator
 from django.contrib.auth import get_user_model
 from django.contrib.auth import password_validation
 from django.contrib.auth.hashers import check_password
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
+from rest_framework_simplejwt.exceptions import AuthenticationFailed
 import re
 
 User = get_user_model()
@@ -181,3 +183,68 @@ class AdminUpdateUserSerializer (serializers.ModelSerializer):
             raise serializers.ValidationError("El número telefónico debe empezar con 3 (celulares colombianos).")
         
         return value
+
+
+# =============================================================================
+# HU14A - Login: Serializer personalizado para autenticación JWT
+# =============================================================================
+# Este serializer extiende TokenObtainPairSerializer para manejar la autenticación
+# con email como username y implementar validaciones específicas de la HU14A
+# =============================================================================
+
+class EmailTokenObtainPairSerializer(TokenObtainPairSerializer):
+    """
+    Serializer personalizado para autenticación JWT con email como username.
+    
+    Implementa los escenarios de la HU14A - Login:
+    - Escenario 1: Inicio de sesión exitoso ✅
+    - Escenario 2: Autenticación por rol ✅  
+    - Escenario 7: Usuario inactivo ✖️
+    - Escenario 12: Contraseña por defecto ✖️
+    """
+    
+    def validate(self, attrs):
+        """
+        Valida las credenciales y aplica las reglas de negocio de la HU14A.
+        
+        Args:
+            attrs: Diccionario con las credenciales (email, password)
+            
+        Returns:
+            dict: Datos del token JWT con información del usuario
+            
+        Raises:
+            AuthenticationFailed: Si las credenciales son inválidas, 
+                                cuenta inactiva o debe cambiar contraseña
+        """
+        # Escenario 1 - Inicio de sesión exitoso: Valida las credenciales
+        data = super().validate(attrs)  # Valida email/password contra la BD
+        
+        # Obtener el usuario autenticado
+        user = self.user  # El usuario que ha intentado autenticarse
+        
+        # Escenario 7 - Usuario inactivo ✖️
+        # Verificar si la cuenta está activa antes de permitir el login
+        if not user.is_active:
+            raise AuthenticationFailed("Cuenta inactiva")
+        
+        # Escenario 12 - Contraseña por defecto ✖️
+        # Verificar si debe cambiar la contraseña (usuarios nuevos o con contraseña por defecto)
+        if user.must_change_password:
+            raise AuthenticationFailed("Por favor, cambie la contraseña")
+        
+        # Escenario 2 - Autenticación por rol ✅
+        # Añadir datos adicionales al token para que el frontend pueda redirigir según el rol
+        data.update({
+            'user': {
+                'email': user.email,
+                'document': user.document,
+                'role': user.role,
+                # Nota: El frontend usará estos datos para:
+                # - Redirigir al panel correspondiente según el rol
+                # - Mostrar el nombre del rol en el encabezado (técnico/administrador)
+                # - Implementar la lógica de redirección automática
+            }
+        })
+        
+        return data

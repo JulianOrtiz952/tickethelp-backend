@@ -44,7 +44,7 @@ class LeastBusyTechnicianAV(RetrieveAPIView):
         serializer = self.get_serializer()
         data = serializer.to_representation(None)
         
-        if data['email']:
+        if data['id']:
             return Response(data)
         else:
             return Response(data, status=status.HTTP_404_NOT_FOUND)

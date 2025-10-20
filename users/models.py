@@ -13,6 +13,7 @@ class User(AbstractUser):
     number    = models.CharField(max_length=20, unique=True, blank=True, null=True)
     role      = models.CharField(max_length=20, choices=Role.choices, default=Role.CLIENT)
     is_active = models.BooleanField(default=True)
+    must_change_password = models.BooleanField(default=False)
     profile_picture = models.URLField(blank=True, null=True, max_length=500)
 
     USERNAME_FIELD = 'email'

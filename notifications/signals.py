@@ -79,32 +79,15 @@ def ticket_technician_change_notification(sender, instance, **kwargs):
     """
     Envía notificaciones cuando se cambia el técnico asignado.
     """
-    if instance.pk:  # Solo para tickets existentes
+    if instance.pk:
         try:
-            # Obtener el técnico anterior
             ticket_anterior = Ticket.objects.get(pk=instance.pk)
-            tecnico_anterior = ticket_anterior.tecnico
-            
-            # Verificar si el técnico cambió
-            if tecnico_anterior != instance.tecnico:
-                logger.info(f"Técnico del ticket #{instance.pk} cambió de "
-                           f"{tecnico_anterior.email if tecnico_anterior else 'Ninguno'} "
-                           f"a {instance.tecnico.email if instance.tecnico else 'Ninguno'}")
-                
-                # Enviar notificaciones de cambio de técnico
-                resultados = NotificationService.enviar_tecnico_cambiado(
-                    instance, tecnico_anterior
-                )
-                
-                logger.info(f"Notificaciones de cambio de técnico enviadas - "
-                           f"Emails: {resultados['emails_enviados']}, "
-                           f"Internas: {resultados['notificaciones_internas']}")
-                
+            # Guardar técnico anterior en el objeto para usarlo después del save
+            instance._previous_tecnico = ticket_anterior.tecnico
         except Ticket.DoesNotExist:
-            # El ticket no existe aún, es una creación
-            pass
+            instance._previous_tecnico = None
         except Exception as e:
-            logger.error(f"Error enviando notificaciones de cambio de técnico: {e}")
+            logger.error(f"Error leyendo ticket anterior para cambio de técnico: {e}")
 
 
 # Función auxiliar para enviar solicitud de finalización
@@ -126,3 +109,24 @@ def enviar_solicitud_finalizacion(ticket):
     except Exception as e:
         logger.error(f"Error enviando solicitud de finalización: {e}")
         return {'errores': [str(e)]}
+
+
+@receiver(post_save, sender=Ticket)
+def ticket_technician_changed_post_save(sender, instance, created, **kwargs):
+    """Enviar notificaciones de técnico cambiado después de guardar el ticket."""
+    if created:
+        return
+
+    prev = getattr(instance, '_previous_tecnico', None)
+    try:
+        if prev != instance.tecnico:
+            logger.info(f"(post_save) Técnico del ticket #{instance.pk} cambió de "
+                       f"{prev.email if prev else 'Ninguno'} "
+                       f"a {instance.tecnico.email if instance.tecnico else 'Ninguno'}")
+
+            resultados = NotificationService.enviar_tecnico_cambiado(instance, prev)
+            logger.info(f"Notificaciones de cambio de técnico enviadas - "
+                       f"Emails: {resultados.get('emails_enviados', 0)}, "
+                       f"Internas: {resultados.get('notificaciones_internas', 0)}")
+    except Exception as e:
+        logger.error(f"Error en post_save enviando notificaciones de cambio de técnico: {e}")

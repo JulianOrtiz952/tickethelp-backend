@@ -50,7 +50,7 @@ class LeastBusyTechnicianAV(RetrieveAPIView):
             return Response(data, status=status.HTTP_404_NOT_FOUND)
 
 class ChangeTechnicianAV(UpdateAPIView):
-    
+    http_method_names = ['put', 'patch', 'options', 'head']
     serializer_class = ChangeTechnicianSerializer
     
     def get_object(self):
@@ -66,10 +66,12 @@ class ChangeTechnicianAV(UpdateAPIView):
             old_technician = ticket.tecnico
             
             ticket.tecnico = new_technician
-            ticket.save()
-
-            # Enviar notificaciones de cambio de técnico
-            NotificationService.enviar_tecnico_cambiado(ticket, old_technician)
+            try:
+                ticket.save()
+            except Exception as e:
+                logger = __import__('logging').getLogger(__name__)
+                logger.error(f"Error guardando ticket al cambiar técnico: {e}")
+                return Response({'error': 'error_saving_ticket', 'message': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
             return Response({
                 'message': 'Técnico actualizado correctamente',
@@ -82,6 +84,10 @@ class ChangeTechnicianAV(UpdateAPIView):
             }, status=status.HTTP_200_OK)
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    def get(self, request, *args, **kwargs):
+        # Evitar que GET devuelva información; explícitamente 405
+        return Response({'detail': 'Method "GET" not allowed.'}, status=status.HTTP_405_METHOD_NOT_ALLOWED)
 
 
 class ActiveTechniciansAV(ListAPIView):

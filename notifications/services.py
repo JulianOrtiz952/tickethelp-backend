@@ -5,6 +5,7 @@ from django.conf import settings
 from django.utils import timezone
 from django.contrib.auth import get_user_model
 from django.template.loader import render_to_string
+from threading import Thread
 
 from .models import Notification, NotificationType
 from tickets.models import Ticket
@@ -460,23 +461,35 @@ class NotificationService:
         
         try:
             html_content = render_to_string(template_html, context)
-            
             text_content = cls._generar_contenido_texto_plano(usuario, ticket, titulo, mensaje)
-            
+
             email = EmailMultiAlternatives(
                 subject=subject,
                 body=text_content,
                 from_email=getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@tickethelp.com'),
                 to=[usuario.email]
             )
-            
             email.attach_alternative(html_content, "text/html")
-            
-            email.send()
-            
+
+            def _send():
+                try:
+                    email.send()
+                except Exception as e:
+                    logger.error(f"Error enviando email en background para {usuario.email}: {e}")
+                    # Intentar fallback de texto plano
+                    try:
+                        cls._enviar_email_texto_plano(usuario, ticket, titulo, mensaje)
+                    except Exception as e2:
+                        logger.error(f"Fallback texto plano falló para {usuario.email}: {e2}")
+
+            Thread(target=_send, daemon=True).start()
+
         except Exception as e:
-            logger.error(f"Error renderizando plantilla HTML para {usuario.email}: {e}")
-            cls._enviar_email_texto_plano(usuario, ticket, titulo, mensaje)
+            logger.error(f"Error preparando email para {usuario.email}: {e}")
+            try:
+                cls._enviar_email_texto_plano(usuario, ticket, titulo, mensaje)
+            except Exception:
+                logger.error(f"No se pudo enviar email ni fallback para {usuario.email}")
     
     @classmethod
     def _obtener_plantilla_html(cls, usuario: User, tipo_codigo: str) -> str:

@@ -6,11 +6,6 @@ from rest_framework.response import Response
 from rest_framework import generics
 from django.shortcuts import get_object_or_404
 from django.core.exceptions import ObjectDoesNotExist
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
-from rest_framework import status
-import re
 
 from .serializers import (
     UserReadSerializer,
@@ -21,8 +16,10 @@ from .serializers import (
     AdminUpdateUserSerializer,
     UserUpdateProfilePictureSerializer,
     ChangePasswordSerializer,
-    ChangePasswordByIdSerializer
+    ChangePasswordByIdSerializer,
+    EmailTokenObtainPairSerializer
 )
+from rest_framework_simplejwt.views import TokenObtainPairView
 User = get_user_model()
 
 class IsAdmin(permissions.BasePermission):
@@ -249,3 +246,52 @@ class AdminUpdateUserView(generics.RetrieveUpdateAPIView):
             data["message"] = "Datos actualizados correctamente."
             return Response(data, status=status.HTTP_200_OK)
         return resp
+
+
+# =============================================================================
+# HU14A - Login: Vista personalizada para autenticación JWT
+# =============================================================================
+# Esta vista extiende TokenObtainPairView para manejar la autenticación
+# con email como username y implementar validaciones específicas de la HU14A
+# =============================================================================
+
+class EmailTokenObtainPairView(TokenObtainPairView):
+    """
+    Vista personalizada para autenticación JWT con email como username.
+    
+    Implementa los escenarios de la HU14A - Login:
+    - Escenario 1: Inicio de sesión exitoso ✅
+    - Escenario 2: Autenticación por rol ✅  
+    - Escenario 5: Credenciales incorrectas ✖️
+    - Escenario 6: Usuario no registrado ✖️
+    - Escenario 7: Usuario inactivo ✖️
+    - Escenario 12: Contraseña por defecto ✖️
+    
+    Endpoint: POST /api/auth/login/
+    Body: {"email": "usuario@ejemplo.com", "password": "contraseña"}
+    
+    Respuestas:
+    - 200: Login exitoso con token JWT y datos del usuario
+    - 401: Credenciales inválidas, usuario inactivo o debe cambiar contraseña
+    - 400: Datos de entrada inválidos
+    """
+    serializer_class = EmailTokenObtainPairSerializer
+    
+    def post(self, request, *args, **kwargs):
+        """
+        Maneja las solicitudes de login con validaciones de la HU14A.
+        
+        Args:
+            request: Request con email y password
+            
+        Returns:
+            Response: Token JWT con datos del usuario o error específico
+            
+        Escenarios implementados:
+        - Escenario 1: Retorna token y datos del usuario para redirección
+        - Escenario 2: Incluye rol en la respuesta para redirección automática
+        - Escenario 5/6: Retorna 401 con mensaje "Credenciales inválidas"
+        - Escenario 7: Retorna 401 con mensaje "Cuenta inactiva"
+        - Escenario 12: Retorna 401 con mensaje "Por favor, cambie la contraseña"
+        """
+        return super().post(request, *args, **kwargs)

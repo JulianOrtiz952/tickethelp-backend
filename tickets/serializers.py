@@ -61,9 +61,9 @@ class EstadoSerializer(serializers.ModelSerializer):
 
 
 class LeastBusyTechnicianSerializer(serializers.Serializer):
-    email = serializers.EmailField(read_only=True)
+    id = serializers.CharField(read_only=True)
 
-    def get_least_busy_technician_email(self):
+    def get_least_busy_technician_id(self):
         technician = User.objects.filter(
             role=User.Role.TECH, 
             is_active=True
@@ -71,11 +71,11 @@ class LeastBusyTechnicianSerializer(serializers.Serializer):
             ticket_count=Count('tickets_asignados')
         ).order_by('ticket_count', '?').first()
         
-        return technician.email if technician else None
+        return technician.document if technician else None
 
     def to_representation(self, instance):
         return {
-            'email': self.get_least_busy_technician_email()
+            'id': self.get_least_busy_technician_id()
         }
 
 class ChangeTechnicianSerializer(serializers.Serializer):

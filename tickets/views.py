@@ -163,7 +163,7 @@ class StateChangeAV(UpdateAPIView):
                 NotificationService.enviar_solicitud_cambio_estado(state_request)
                 
                 return Response({
-                    'message': 'Solicitud de cambio de estado enviada para aprobación',
+                    'message': 'El estado final requiere validación del administrador, solicitud enviada correctamente',
                     'request_id': state_request.id,
                     'status': 'pending_approval',
                     'to_state': to_state.nombre
@@ -286,7 +286,7 @@ class TicketListView(ListAPIView):
     serializer_class = TicketSerializer
 
     def get_queryset(self):
-        user_document = self.request.query_params.get('user_document')
+        user_document = self.request.query_params.get('user_document') #Cambiar poa request.user cuando haya auth 
 
         if not user_document or len(user_document.strip()) == 0:
             return Response({
@@ -340,11 +340,11 @@ class TicketListView(ListAPIView):
         if isinstance(queryset, Response):
             return queryset
 
-        '''if request.user.role != User.Role.ADMIN and request.user.document != request.query_params.get('user_document'):
+        if request.user.role != User.Role.ADMIN and request.user.document != request.query_params.get('user_document'):
             return Response({
                 'error': 'Acceso denegado',
                 'message': 'No tienes acceso a los tickets de otro usuario.'
-            }, status=status.HTTP_403_FORBIDDEN) ''' #activar cuando haya auth
+            }, status=status.HTTP_403_FORBIDDEN)  #activar cuando haya auth
 
         serializer = self.get_serializer(queryset, many=True)
         return Response({

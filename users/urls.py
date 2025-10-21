@@ -48,7 +48,7 @@ urlpatterns = [
     # Endpoint para autenticación con email como username
     # Implementa los escenarios de la HU14A - Login
     # =============================================================================
-    path('auth/login/', EmailTokenObtainPairView.as_view(), name='token_obtain_pair_email'), # HU14A - Login con email
+    path('users/auth/login/', EmailTokenObtainPairView.as_view(), name='token_obtain_pair_email'), # HU14A - Login con email
     
     # =============================================================================
     # HU14A - Login: Endpoint para cambio de contraseña con validaciones
@@ -56,5 +56,5 @@ urlpatterns = [
     # Endpoint para cambio de contraseña con validaciones específicas
     # Implementa los escenarios 4 y 13-18 de la HU14A - Login
     # =============================================================================
-    path('auth/change-password/', ChangePasswordView.as_view(), name='change_password'), # HU14A - Cambio de contraseña
+    path('users/auth/change-password/', ChangePasswordView.as_view(), name='change_password'), # HU14A - Cambio de contraseña
 ]

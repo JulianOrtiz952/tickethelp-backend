@@ -22,6 +22,8 @@ CSRF_TRUSTED_ORIGINS = [
 ]
 
 AUTH_USER_MODEL = "users.User"
+# USER_ID_FIELD no es necesario aquí - SimpleJWT usa el primary_key del modelo
+# El modelo User ya tiene document como primary_key=True
 
 # -----------------------------
 # APLICACIONES
@@ -136,12 +138,14 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 # -----------------------------
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
-        "rest_framework.authentication.SessionAuthentication",
-        "rest_framework.authentication.BasicAuthentication",
+        # Autenticación por JWT para APIs (recomendada para frontend SPA/mobile)
+        "rest_framework_simplejwt.authentication.JWTAuthentication",
     ],
     "DEFAULT_PERMISSION_CLASSES": [
         "rest_framework.permissions.AllowAny",
     ],
+    # Manejador de excepciones personalizado para respuestas homogéneas
+    "EXCEPTION_HANDLER": "users.views.custom_exception_handler",
 }
 
 # -----------------------------
@@ -169,3 +173,16 @@ DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'noreply@tickethelp.com')
 
 # Configuración de notificaciones
 NOTIFICATIONS_EMAIL_ENABLED = os.getenv('NOTIFICATIONS_EMAIL_ENABLED', 'True') == 'True'
+
+# -----------------------------
+# SIMPLE JWT CONFIGURATION
+# -----------------------------
+# Configuración específica para SimpleJWT con modelo User personalizado
+from datetime import timedelta
+
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60),    # Token de acceso válido por 1 hora
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=1),       # Token de refresh válido por 1 día
+    'USER_ID_FIELD': 'document',                       # Campo usado como identificador único
+    'USER_ID_CLAIM': 'document',                       # Nombre del claim dentro del token JWT
+}

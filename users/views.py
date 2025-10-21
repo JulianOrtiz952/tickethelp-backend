@@ -23,6 +23,8 @@ from .serializers import (
     EmailTokenObtainPairSerializer
 )
 from rest_framework_simplejwt.views import TokenObtainPairView
+from rest_framework.exceptions import AuthenticationFailed
+from rest_framework.views import exception_handler
 User = get_user_model()
 
 class IsAdmin(permissions.BasePermission):
@@ -283,22 +285,45 @@ class EmailTokenObtainPairView(TokenObtainPairView):
     def post(self, request, *args, **kwargs):
         """
         Maneja las solicitudes de login con validaciones de la HU14A.
-        
-        Args:
-            request: Request con email y password
-            
-        Returns:
-            Response: Token JWT con datos del usuario o error específico
-            
-        Escenarios implementados:
-        - Escenario 1: Retorna token y datos del usuario para redirección
-        - Escenario 2: Incluye rol en la respuesta para redirección automática
-        - Escenario 5/6: Retorna 401 con mensaje "Credenciales inválidas"
-        - Escenario 7: Retorna 401 con mensaje "Cuenta inactiva"
-        - Escenario 12: Retorna 401 con mensaje "Por favor, cambie la contraseña"
-        """
-        return super().post(request, *args, **kwargs)
 
+        Anotaciones:
+        - Se valida el serializer para generar tokens (JWT).
+        - Se verifica explícitamente que exista `serializer.user` tras la validación.
+          Si no existe, se lanza un error claro de "Usuario no encontrado".
+        - Se retorna la misma estructura de respuesta que `TokenObtainPairView`.
+        """
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        # Verificación solicitada: asegurar que el usuario exista tras la validación
+        # Si por alguna razón no se estableció el usuario, devolver un error claro.
+        if not getattr(serializer, 'user', None):
+            raise AuthenticationFailed("Usuario no encontrado")
+
+        return Response(serializer.validated_data, status=status.HTTP_200_OK)
+
+
+# =============================================================================
+# Excepciones: Manejador personalizado
+# =============================================================================
+# Este manejador centraliza la forma en la que se retornan errores no capturados.
+# Si DRF no genera una respuesta (response es None), devolvemos un 500 controlado
+# con un mensaje estándar para el cliente.
+# =============================================================================
+
+def custom_exception_handler(exc, context):
+    """
+    Manejador de excepciones personalizado para respuestas homogéneas.
+
+    - Delegamos a exception_handler para errores DRF habituales.
+    - Si no hay respuesta (errores no manejados), devolvemos 500 estándar.
+    """
+    response = exception_handler(exc, context)
+
+    if response is None:
+        return Response({"detail": "Error en el servidor"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    return response
 
 # =============================================================================
 # HU14A - Login: Vista para cambio de contraseña con validaciones específicas

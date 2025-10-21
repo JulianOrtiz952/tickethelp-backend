@@ -5,6 +5,7 @@ from rest_framework.permissions import AllowAny
 from django.shortcuts import get_object_or_404
 from django.contrib.auth import get_user_model
 from django.utils import timezone
+import tickets
 from tickets.models import Ticket, Estado, StateChangeRequest
 from tickets.serializers import TicketSerializer, EstadoSerializer, LeastBusyTechnicianSerializer, ChangeTechnicianSerializer, ActiveTechnicianSerializer, StateChangeSerializer, StateApprovalSerializer, PendingApprovalSerializer
 from notifications.services import NotificationService
@@ -279,4 +280,75 @@ class PendingApprovalsAV(ListAPIView):
             'message': 'Solicitudes de cambio de estado pendientes',
             'total_pending': queryset.count(),
             'requests': serializer.data
+        }, status=status.HTTP_200_OK)
+
+class TicketListView(ListAPIView):
+    serializer_class = TicketSerializer
+
+    def get_queryset(self):
+        user_document = self.request.query_params.get('user_document')
+
+        if not user_document or len(user_document.strip()) == 0:
+            return Response({
+                'error': 'Solicitud inválida',
+                'message': 'El parámetro "user_document" está vacío o tiene un formato incorrecto.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            user = User.objects.get(document=user_document)
+        except User.DoesNotExist:
+            return Response({
+                'error': 'Usuario no encontrado',
+                'message': 'El documento de usuario proporcionado no existe'
+            }, status=status.HTTP_404_NOT_FOUND)
+
+        if not self.request.user.is_authenticated:
+            return Response({
+                'error': 'No tienes acceso a esta sección',
+                'message': 'Debe iniciar sesión para acceder a esta sección.'
+            }, status=status.HTTP_403_FORBIDDEN)
+
+        if user.role == User.Role.TECH:
+            tickets = Ticket.objects.filter(tecnico=user)
+            if not tickets:
+                return Response({
+                    'message': 'No tienes tickets registrados.'
+                }, status=status.HTTP_200_OK)
+            return tickets
+
+        elif user.role == User.Role.ADMIN:
+            tickets = Ticket.objects.all()
+            if not tickets:
+                return Response({
+                    'message': 'No tienes tickets registrados.'
+                }, status=status.HTTP_200_OK)
+            return tickets
+
+        elif user.role == User.Role.CLIENT:
+            tickets = Ticket.objects.filter(cliente=user)
+            if not tickets:
+                return Response({
+                    'message': 'No tienes tickets registrados.'
+                }, status=status.HTTP_200_OK)
+            return tickets
+
+        return Ticket.objects.none()
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.get_queryset()
+
+        if isinstance(queryset, Response):
+            return queryset
+
+        '''if request.user.role != User.Role.ADMIN and request.user.document != request.query_params.get('user_document'):
+            return Response({
+                'error': 'Acceso denegado',
+                'message': 'No tienes acceso a los tickets de otro usuario.'
+            }, status=status.HTTP_403_FORBIDDEN) ''' #activar cuando haya auth
+
+        serializer = self.get_serializer(queryset, many=True)
+        return Response({
+            'message': 'Lista de tickets',
+            'total_tickets': queryset.count(),
+            'tickets': serializer.data
         }, status=status.HTTP_200_OK)

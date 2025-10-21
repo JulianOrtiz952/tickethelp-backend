@@ -1,5 +1,5 @@
 from rest_framework.routers import DefaultRouter
-from .views import UserViewSet, AdminViewSet, TechnicianViewSet, ClientViewSet, UserUpdateView, ChangePasswordView, ChangePasswordByIdView, UserUpdateByIdView, get_client_by_document, AdminUpdateUserView, UserUpdateProfilePictureView
+from .views import UserViewSet, AdminViewSet, TechnicianViewSet, ClientViewSet, UserUpdateView, ChangePasswordView, ChangePasswordByIdView, UserUpdateByIdView, get_client_by_document, AdminUpdateUserView, UserUpdateProfilePictureView, EmailTokenObtainPairView
 from django.urls import path, include
 urlpatterns = [
     # Listar usuarios
@@ -41,4 +41,20 @@ urlpatterns = [
     #Endpoint para las pruebas
     path('me/<int:pk>/', UserUpdateByIdView.as_view(), name='users-me-by-id'),
     path('me/change-password/<int:pk>/', ChangePasswordByIdView.as_view(), name='users-change-password-by-id'),
+    
+    # =============================================================================
+    # HU14A - Login: Endpoint de autenticación JWT personalizado
+    # =============================================================================
+    # Endpoint para autenticación con email como username
+    # Implementa los escenarios de la HU14A - Login
+    # =============================================================================
+    path('auth/login/', EmailTokenObtainPairView.as_view(), name='token_obtain_pair_email'), # HU14A - Login con email
+    
+    # =============================================================================
+    # HU14A - Login: Endpoint para cambio de contraseña con validaciones
+    # =============================================================================
+    # Endpoint para cambio de contraseña con validaciones específicas
+    # Implementa los escenarios 4 y 13-18 de la HU14A - Login
+    # =============================================================================
+    path('auth/change-password/', ChangePasswordView.as_view(), name='change_password'), # HU14A - Cambio de contraseña
 ]

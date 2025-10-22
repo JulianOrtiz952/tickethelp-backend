@@ -340,5 +340,3 @@ class TicketListView(ListAPIView):
             'total_tickets': queryset.count(),
             'tickets': serializer.data
         }, status=status.HTTP_200_OK)
-
-

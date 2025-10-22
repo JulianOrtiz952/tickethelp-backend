@@ -302,11 +302,11 @@ class TicketListView(ListAPIView):
                 'message': 'El documento de usuario proporcionado no existe'
             }, status=status.HTTP_404_NOT_FOUND)
 
-        if not self.request.user.is_authenticated:
-            return Response({
-                'error': 'No tienes acceso a esta sección',
-                'message': 'Debe iniciar sesión para acceder a esta sección.'
-            }, status=status.HTTP_403_FORBIDDEN)
+        #if not self.request.user.is_authenticated:
+       #     return Response({
+        #        'error': 'No tienes acceso a esta sección',
+         #       'message': 'Debe iniciar sesión para acceder a esta sección.'
+          #  }, status=status.HTTP_403_FORBIDDEN)
 
         if user.role == User.Role.TECH:
             tickets = Ticket.objects.filter(tecnico=user)
@@ -352,3 +352,5 @@ class TicketListView(ListAPIView):
             'total_tickets': queryset.count(),
             'tickets': serializer.data
         }, status=status.HTTP_200_OK)
+
+

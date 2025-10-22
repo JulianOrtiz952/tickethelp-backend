@@ -203,48 +203,52 @@ class EmailTokenObtainPairSerializer(TokenObtainPairSerializer):
     - Escenario 12: Contraseña por defecto ✖️
     """
     
+    @classmethod
+    def get_token(cls, user):
+        """
+        Personaliza el token JWT con claims adicionales del usuario.
+        """
+        token = super().get_token(user)
+        # Claims personalizados:
+        token['email'] = user.email
+        token['role'] = user.role
+        token['is_active'] = user.is_active
+        token['document'] = user.document
+        return token
+    
     def validate(self, attrs):
         """
         Valida las credenciales y aplica las reglas de negocio de la HU14A.
-        
-        Args:
-            attrs: Diccionario con las credenciales (email, password)
-            
-        Returns:
-            dict: Datos del token JWT con información del usuario
-            
-        Raises:
-            AuthenticationFailed: Si las credenciales son inválidas, 
-                                cuenta inactiva o debe cambiar contraseña
+
+        - Valida credenciales vía `super().validate` (JWT).
+        - Verifica explícitamente la contraseña para retornar un mensaje claro.
+        - Aplica reglas: usuario activo y contraseña por defecto.
+        - Enriquecer respuesta con datos del usuario y su rol.
         """
-        # Escenario 1 - Inicio de sesión exitoso: Valida las credenciales
-        data = super().validate(attrs)  # Valida email/password contra la BD
-        
-        # Obtener el usuario autenticado
-        user = self.user  # El usuario que ha intentado autenticarse
-        
-        # Escenario 7 - Usuario inactivo ✖️
-        # Verificar si la cuenta está activa antes de permitir el login
+        # 1) Validación base de SimpleJWT (email/password) -> genera tokens
+        data = super().validate(attrs)
+
+        # 2) Verificación explícita de contraseña con mensaje claro
+        #    Esto asegura que, si llega hasta aquí pero la contraseña no coincide,
+        #    se informe el motivo exacto.
+        user = self.user
+        if not user.check_password(attrs.get('password', '')):
+            raise AuthenticationFailed("Credenciales inválidas")
+
+        # 3) Usuario debe estar activo
         if not user.is_active:
             raise AuthenticationFailed("Cuenta inactiva")
-        
-        # Escenario 12 - Contraseña por defecto ✖️
-        # Verificar si debe cambiar la contraseña (usuarios nuevos o con contraseña por defecto)
-        if user.must_change_password:
+
+        # 4) Usuario debe cambiar contraseña (por defecto/temporal)
+        if getattr(user, 'must_change_password', False):
             raise AuthenticationFailed("Por favor, cambie la contraseña")
-        
-        # Escenario 2 - Autenticación por rol ✅
-        # Añadir datos adicionales al token para que el frontend pueda redirigir según el rol
-        data.update({
-            'user': {
-                'email': user.email,
-                'document': user.document,
-                'role': user.role,
-                # Nota: El frontend usará estos datos para:
-                # - Redirigir al panel correspondiente según el rol
-                # - Mostrar el nombre del rol en el encabezado (técnico/administrador)
-                # - Implementar la lógica de redirección automática
-            }
-        })
-        
+
+        # 5) Enriquecer la respuesta con datos del usuario y su rol
+        data['user'] = {
+            'document': user.document,
+            'email': user.email,
+            'role': user.role,
+            'is_active': user.is_active,
+        }
+
         return data

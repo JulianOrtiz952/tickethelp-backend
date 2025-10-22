@@ -23,6 +23,10 @@ from .serializers import (
     EmailTokenObtainPairSerializer
 )
 from rest_framework_simplejwt.views import TokenObtainPairView
+from rest_framework_simplejwt.tokens import AccessToken
+from rest_framework.exceptions import AuthenticationFailed
+from rest_framework.views import exception_handler
+from rest_framework_simplejwt.exceptions import TokenError, InvalidToken
 User = get_user_model()
 
 class IsAdmin(permissions.BasePermission):
@@ -283,22 +287,45 @@ class EmailTokenObtainPairView(TokenObtainPairView):
     def post(self, request, *args, **kwargs):
         """
         Maneja las solicitudes de login con validaciones de la HU14A.
-        
-        Args:
-            request: Request con email y password
-            
-        Returns:
-            Response: Token JWT con datos del usuario o error específico
-            
-        Escenarios implementados:
-        - Escenario 1: Retorna token y datos del usuario para redirección
-        - Escenario 2: Incluye rol en la respuesta para redirección automática
-        - Escenario 5/6: Retorna 401 con mensaje "Credenciales inválidas"
-        - Escenario 7: Retorna 401 con mensaje "Cuenta inactiva"
-        - Escenario 12: Retorna 401 con mensaje "Por favor, cambie la contraseña"
-        """
-        return super().post(request, *args, **kwargs)
 
+        Anotaciones:
+        - Se valida el serializer para generar tokens (JWT).
+        - Se verifica explícitamente que exista `serializer.user` tras la validación.
+          Si no existe, se lanza un error claro de "Usuario no encontrado".
+        - Se retorna la misma estructura de respuesta que `TokenObtainPairView`.
+        """
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        # Verificación solicitada: asegurar que el usuario exista tras la validación
+        # Si por alguna razón no se estableció el usuario, devolver un error claro.
+        if not getattr(serializer, 'user', None):
+            raise AuthenticationFailed("Usuario no encontrado")
+
+        return Response(serializer.validated_data, status=status.HTTP_200_OK)
+
+
+# =============================================================================
+# Excepciones: Manejador personalizado
+# =============================================================================
+# Este manejador centraliza la forma en la que se retornan errores no capturados.
+# Si DRF no genera una respuesta (response es None), devolvemos un 500 controlado
+# con un mensaje estándar para el cliente.
+# =============================================================================
+
+def custom_exception_handler(exc, context):
+    """
+    Manejador de excepciones personalizado para respuestas homogéneas.
+
+    - Delegamos a exception_handler para errores DRF habituales.
+    - Si no hay respuesta (errores no manejados), devolvemos 500 estándar.
+    """
+    response = exception_handler(exc, context)
+
+    if response is None:
+        return Response({"detail": "Error en el servidor"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    return response
 
 # =============================================================================
 # HU14A - Login: Vista para cambio de contraseña con validaciones específicas
@@ -389,3 +416,131 @@ class ChangePasswordView(APIView):
         user.save()
 
         return Response({"detail": "Contraseña actualizada con éxito"}, status=status.HTTP_200_OK)
+
+
+# =============================================================================
+# HU14A - Login: Endpoints adicionales para manejo de tokens
+# =============================================================================
+# Estos endpoints implementan los métodos adicionales requeridos:
+# - Método 1: Obtener datos del usuario desde el token
+# - Método 2: Validar si el token está activo
+# =============================================================================
+
+class TokenValidationView(APIView):
+    """
+    Endpoint para validar si el token JWT está activo.
+    
+    Método adicional 2 de la HU14A - Login:
+    - Valida si el token proporcionado es válido y no ha expirado
+    - Retorna información sobre el estado del token
+    
+    Endpoint: GET /api/auth/validate-token/
+    Headers: Authorization: Bearer <token>
+    
+    Respuestas:
+    - 200: Token válido y activo
+    - 401: Token inválido, expirado o malformado
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        """
+        Valida si el token JWT está activo.
+        
+        Returns:
+            Response: Estado del token y datos del usuario
+        """
+        try:
+            # El token ya fue validado por IsAuthenticated
+            user = request.user
+            
+            return Response({
+                "valid": True,
+                "message": "Token válido y activo",
+                "user": {
+                    "document": user.document,
+                    "email": user.email,
+                    "role": user.role,
+                    "is_active": user.is_active,
+                }
+            }, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            return Response({
+                "valid": False,
+                "message": "Error al validar el token",
+                "error": str(e)
+            }, status=status.HTTP_401_UNAUTHORIZED)
+
+
+class TokenUserDataView(APIView):
+    """
+    Endpoint para obtener datos del usuario desde el token JWT.
+    
+    Método adicional 1 de la HU14A - Login:
+    - Extrae y retorna los datos del usuario almacenados en el token
+    - Incluye información adicional del usuario desde la base de datos
+    
+    Endpoint: GET /api/auth/user-data/
+    Headers: Authorization: Bearer <token>
+    
+    Respuestas:
+    - 200: Datos del usuario obtenidos exitosamente
+    - 401: Token inválido o expirado
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        """
+        Obtiene los datos del usuario desde el token JWT.
+        
+        Returns:
+            Response: Datos completos del usuario
+        """
+        try:
+            user = request.user
+            
+            # Obtener el token actual para extraer claims personalizados
+            auth_header = request.META.get('HTTP_AUTHORIZATION', '')
+            if auth_header.startswith('Bearer '):
+                token_string = auth_header.split(' ')[1]
+                try:
+                    token = AccessToken(token_string)
+                    # Extraer claims personalizados del token
+                    token_data = {
+                        'email': token.get('email'),
+                        'role': token.get('role'),
+                        'is_active': token.get('is_active'),
+                        'document': token.get('document'),
+                    }
+                except (TokenError, InvalidToken):
+                    token_data = {}
+            else:
+                token_data = {}
+            
+            # Datos del usuario desde la base de datos
+            user_data = {
+                "document": user.document,
+                "email": user.email,
+                "role": user.role,
+                "is_active": user.is_active,
+                "first_name": user.first_name,
+                "last_name": user.last_name,
+                "number": user.number,
+                "profile_picture": user.profile_picture,
+                "date_joined": user.date_joined,
+            }
+            
+            return Response({
+                "success": True,
+                "message": "Datos del usuario obtenidos exitosamente",
+                "user": user_data,
+                "token_claims": token_data
+            }, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            return Response({
+                "success": False,
+                "message": "Error al obtener datos del usuario",
+                "error": str(e)
+            }, status=status.HTTP_401_UNAUTHORIZED)

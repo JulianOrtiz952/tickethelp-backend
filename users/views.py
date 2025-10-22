@@ -27,17 +27,13 @@ from rest_framework_simplejwt.tokens import AccessToken
 from rest_framework.exceptions import AuthenticationFailed
 from rest_framework.views import exception_handler
 from rest_framework_simplejwt.exceptions import TokenError, InvalidToken
+from .permissions import IsAdmin, IsTechnician, IsClient, IsAdminOrTechnician, IsAdminOrOwner, IsOwnerOrAdmin
 User = get_user_model()
-
-class IsAdmin(permissions.BasePermission):
-    def has_permission(self, request, view) -> bool:
-        user = request.user
-        return bool(user and user.is_authenticated and (getattr(user, 'role', None) == 'ADMIN' or user.is_superuser))
 
 # Maneja las vistas para los usuarios
 class UserViewSet(viewsets.ModelViewSet):
     queryset = User.objects.all()
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [IsAdmin]
 
     def get_serializer_class(self):
         if self.action == 'create':
@@ -116,7 +112,7 @@ class UserViewSet(viewsets.ModelViewSet):
 
 # Maneja las vistas para los roles específicos
 class BaseRoleViewSet(viewsets.ModelViewSet):
-    permission_classes = [permissions.AllowAny] # Solo para pruebas, luego cambiar a IsAdmin
+    permission_classes = [IsAdmin]
     def get_serializer_class(self):
         return UserCreateSerializer if self.action in ('create', 'update', 'partial_update') else UserReadSerializer
     def get_queryset(self):
@@ -160,7 +156,7 @@ class ChangePasswordView(generics.GenericAPIView):
         return Response({"message": "Contraseña actualizada correctamente, vuelve a iniciar sesión."}, status=status.HTTP_200_OK)
     
 class UserUpdateByIdView(generics.RetrieveUpdateAPIView):
-    permission_classes = [permissions.AllowAny]  # <- Habilitado solo para pruebas
+    permission_classes = [IsAdmin]  # <- Habilitado solo para pruebas
     serializer_class = UserUpdateSerializer
     lookup_url_kwarg = 'pk'
 
@@ -176,7 +172,7 @@ class UserUpdateByIdView(generics.RetrieveUpdateAPIView):
         return resp
 
 class UserUpdateProfilePictureView(generics.RetrieveUpdateAPIView):
-    permission_classes = [permissions.AllowAny] # <- Habilitado solo para pruebas, luego cambiar a IsAuthenticated
+    permission_classes = [permissions.IsAuthenticated] # <- Habilitado solo para pruebas, luego cambiar a IsAuthenticated
     serializer_class = UserUpdateProfilePictureSerializer
 
     def get_object(self):
@@ -192,7 +188,7 @@ class UserUpdateProfilePictureView(generics.RetrieveUpdateAPIView):
         return resp
 
 class ChangePasswordByIdView(generics.GenericAPIView):
-    permission_classes = [permissions.AllowAny]  # <- Habilitado solo para pruebas
+    permission_classes = [permissions.IsAuthenticated]  # <- Habilitado solo para pruebas
     serializer_class = ChangePasswordByIdSerializer
     def post(self, request, pk, *args, **kwargs):
         user_obj = get_object_or_404(User, pk=pk)
@@ -203,7 +199,7 @@ class ChangePasswordByIdView(generics.GenericAPIView):
     
 # Función para consultar cliente por documento con manejo de error personalizado
 @api_view(['GET'])
-@permission_classes([permissions.AllowAny])  # Cambiar por IsAdmin en producción
+@permission_classes([IsAdminOrTechnician])  # Solo admin o técnicos pueden consultar clientes
 def get_client_by_document(request, document):
     """
     Consulta un cliente por su número de documento.
@@ -240,7 +236,7 @@ def get_client_by_document(request, document):
 
 # ================ Admin ================
 class AdminUpdateUserView(generics.RetrieveUpdateAPIView):
-    permission_classes = [permissions.AllowAny] # <- Habilitado solo para pruebas, luego cambiar a IsAdmin
+    permission_classes = [IsAdmin]  # Solo administradores pueden actualizar usuarios
     serializer_class = AdminUpdateUserSerializer
 
     def get_object(self):

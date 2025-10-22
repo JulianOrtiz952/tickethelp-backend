@@ -9,6 +9,7 @@ import tickets
 from tickets.models import Ticket, Estado, StateChangeRequest
 from tickets.serializers import TicketSerializer, EstadoSerializer, LeastBusyTechnicianSerializer, ChangeTechnicianSerializer, ActiveTechnicianSerializer, StateChangeSerializer, StateApprovalSerializer, PendingApprovalSerializer
 from notifications.services import NotificationService
+from .permissions import IsAdmin, IsTechnician, IsClient, IsAdminOrTechnician, IsAdminOrClient, IsTicketOwnerOrAdmin, IsAssignedTechnicianOrAdmin, IsAuthenticated
 
 User = get_user_model()
 
@@ -110,7 +111,7 @@ class ActiveTechniciansAV(ListAPIView):
 
 
 class StateChangeAV(UpdateAPIView):
-    permission_classes = [AllowAny]
+    permission_classes = [IsAssignedTechnicianOrAdmin]  # Solo técnico asignado o admin
     serializer_class = StateChangeSerializer
     
     def get_object(self):
@@ -182,7 +183,7 @@ class StateChangeAV(UpdateAPIView):
 
 
 class StateApprovalAV(UpdateAPIView):
-    permission_classes = [AllowAny]
+    permission_classes = [IsAdmin]  # Solo administradores pueden aprobar/rechazar
     serializer_class = StateApprovalSerializer
     
     def get_object(self):
@@ -266,7 +267,7 @@ class StateApprovalAV(UpdateAPIView):
 
 
 class PendingApprovalsAV(ListAPIView):
-    permission_classes = [AllowAny]
+    permission_classes = [IsAdmin]  # Solo administradores pueden ver solicitudes pendientes
     serializer_class = PendingApprovalSerializer
     
     def get_queryset(self):

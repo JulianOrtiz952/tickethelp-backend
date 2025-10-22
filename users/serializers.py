@@ -3,6 +3,8 @@ from rest_framework.validators import UniqueValidator
 from django.contrib.auth import get_user_model
 from django.contrib.auth import password_validation
 from django.contrib.auth.hashers import check_password
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
+from rest_framework_simplejwt.exceptions import AuthenticationFailed
 import re
 
 User = get_user_model()
@@ -181,3 +183,72 @@ class AdminUpdateUserSerializer (serializers.ModelSerializer):
             raise serializers.ValidationError("El número telefónico debe empezar con 3 (celulares colombianos).")
         
         return value
+
+
+# =============================================================================
+# HU14A - Login: Serializer personalizado para autenticación JWT
+# =============================================================================
+# Este serializer extiende TokenObtainPairSerializer para manejar la autenticación
+# con email como username y implementar validaciones específicas de la HU14A
+# =============================================================================
+
+class EmailTokenObtainPairSerializer(TokenObtainPairSerializer):
+    """
+    Serializer personalizado para autenticación JWT con email como username.
+    
+    Implementa los escenarios de la HU14A - Login:
+    - Escenario 1: Inicio de sesión exitoso ✅
+    - Escenario 2: Autenticación por rol ✅  
+    - Escenario 7: Usuario inactivo ✖️
+    - Escenario 12: Contraseña por defecto ✖️
+    """
+    
+    @classmethod
+    def get_token(cls, user):
+        """
+        Personaliza el token JWT con claims adicionales del usuario.
+        """
+        token = super().get_token(user)
+        # Claims personalizados:
+        token['email'] = user.email
+        token['role'] = user.role
+        token['is_active'] = user.is_active
+        token['document'] = user.document
+        return token
+    
+    def validate(self, attrs):
+        """
+        Valida las credenciales y aplica las reglas de negocio de la HU14A.
+
+        - Valida credenciales vía `super().validate` (JWT).
+        - Verifica explícitamente la contraseña para retornar un mensaje claro.
+        - Aplica reglas: usuario activo y contraseña por defecto.
+        - Enriquecer respuesta con datos del usuario y su rol.
+        """
+        # 1) Validación base de SimpleJWT (email/password) -> genera tokens
+        data = super().validate(attrs)
+
+        # 2) Verificación explícita de contraseña con mensaje claro
+        #    Esto asegura que, si llega hasta aquí pero la contraseña no coincide,
+        #    se informe el motivo exacto.
+        user = self.user
+        if not user.check_password(attrs.get('password', '')):
+            raise AuthenticationFailed("Credenciales inválidas")
+
+        # 3) Usuario debe estar activo
+        if not user.is_active:
+            raise AuthenticationFailed("Cuenta inactiva")
+
+        # 4) Usuario debe cambiar contraseña (por defecto/temporal)
+        if getattr(user, 'must_change_password', False):
+            raise AuthenticationFailed("Por favor, cambie la contraseña")
+
+        # 5) Enriquecer la respuesta con datos del usuario y su rol
+        data['user'] = {
+            'document': user.document,
+            'email': user.email,
+            'role': user.role,
+            'is_active': user.is_active,
+        }
+
+        return data

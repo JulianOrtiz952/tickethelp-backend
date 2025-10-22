@@ -36,6 +36,7 @@ INSTALLED_APPS = [
 
     # Terceros
     "rest_framework",
+    "rest_framework_simplejwt",
     "corsheaders",
     "whitenoise.runserver_nostatic",
 
@@ -136,6 +137,7 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 # -----------------------------
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
+        "rest_framework_simplejwt.authentication.JWTAuthentication",
         "rest_framework.authentication.SessionAuthentication",
         "rest_framework.authentication.BasicAuthentication",
     ],
@@ -169,3 +171,11 @@ DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'noreply@tickethelp.com')
 
 # Configuración de notificaciones
 NOTIFICATIONS_EMAIL_ENABLED = os.getenv('NOTIFICATIONS_EMAIL_ENABLED', 'True') == 'True'
+
+# -----------------------------
+# SIMPLE JWT CONFIGURATION
+# -----------------------------
+from rest_framework_simplejwt.settings import api_settings
+
+# Configurar SimpleJWT para usar 'document' en lugar de 'id'
+api_settings.USER_ID_FIELD = 'document'

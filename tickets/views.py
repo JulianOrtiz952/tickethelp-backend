@@ -302,12 +302,6 @@ class TicketListView(ListAPIView):
                 'message': 'El documento de usuario proporcionado no existe'
             }, status=status.HTTP_404_NOT_FOUND)
 
-        #if not self.request.user.is_authenticated:
-       #     return Response({
-        #        'error': 'No tienes acceso a esta sección',
-         #       'message': 'Debe iniciar sesión para acceder a esta sección.'
-          #  }, status=status.HTTP_403_FORBIDDEN)
-
         if user.role == User.Role.TECH:
             tickets = Ticket.objects.filter(tecnico=user)
             if not tickets:
@@ -339,12 +333,6 @@ class TicketListView(ListAPIView):
 
         if isinstance(queryset, Response):
             return queryset
-
-        '''if request.user.role != User.Role.ADMIN and request.user.document != request.query_params.get('user_document'):
-            return Response({
-                'error': 'Acceso denegado',
-                'message': 'No tienes acceso a los tickets de otro usuario.'
-            }, status=status.HTTP_403_FORBIDDEN) ''' #activar cuando haya auth
 
         serializer = self.get_serializer(queryset, many=True)
         return Response({

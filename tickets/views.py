@@ -340,11 +340,11 @@ class TicketListView(ListAPIView):
         if isinstance(queryset, Response):
             return queryset
 
-        if request.user.role != User.Role.ADMIN and request.user.document != request.query_params.get('user_document'):
+        '''if request.user.role != User.Role.ADMIN and request.user.document != request.query_params.get('user_document'):
             return Response({
                 'error': 'Acceso denegado',
                 'message': 'No tienes acceso a los tickets de otro usuario.'
-            }, status=status.HTTP_403_FORBIDDEN)  #activar cuando haya auth
+            }, status=status.HTTP_403_FORBIDDEN) ''' #activar cuando haya auth
 
         serializer = self.get_serializer(queryset, many=True)
         return Response({

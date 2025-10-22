@@ -203,6 +203,22 @@ class EmailTokenObtainPairSerializer(TokenObtainPairSerializer):
     - Escenario 12: Contraseña por defecto ✖️
     """
     
+    @classmethod
+    def get_token(cls, user):
+        """
+        Personaliza el token JWT con claims adicionales del usuario.
+        """
+        token = super().get_token(user)
+        # Claims personalizados:
+        token['email'] = user.email
+        token['role'] = user.role
+        token['is_active'] = user.is_active
+        token['document'] = user.document
+        # Si quieres más (evita PII innecesaria):
+        # token['first_name'] = user.first_name
+        # token['last_name']  = user.last_name
+        return token
+    
     def validate(self, attrs):
         """
         Valida las credenciales y aplica las reglas de negocio de la HU14A.
@@ -231,12 +247,11 @@ class EmailTokenObtainPairSerializer(TokenObtainPairSerializer):
             raise AuthenticationFailed("Por favor, cambie la contraseña")
 
         # 5) Enriquecer la respuesta con datos del usuario y su rol
-        data.update({
-            'user': {
-                'email': user.email,
-                'document': user.document,
-                'role': user.role,
-            }
-        })
+        data['user'] = {
+            'document': user.document,
+            'email': user.email,
+            'role': user.role,
+            'is_active': user.is_active,
+        }
 
         return data

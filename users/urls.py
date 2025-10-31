@@ -1,5 +1,5 @@
 from rest_framework.routers import DefaultRouter
-from .views import UserViewSet, AdminViewSet, TechnicianViewSet, ClientViewSet, UserUpdateView, ChangePasswordView, ChangePasswordByIdView, UserUpdateByIdView, get_client_by_document, AdminUpdateUserView, UserUpdateProfilePictureView, EmailTokenObtainPairView, TokenValidationView, TokenUserDataView
+from .views import UserViewSet, AdminViewSet, TechnicianViewSet, ClientViewSet, UserUpdateView, ChangePasswordView, ChangePasswordByIdView, UserUpdateByIdView, get_client_by_document, AdminUpdateUserView, UserUpdateProfilePictureView, EmailTokenObtainPairView, TokenValidationView, TokenUserDataView, TechnicianActivityStatsView
 from django.urls import path, include
 urlpatterns = [
     # Listar usuarios
@@ -26,6 +26,8 @@ urlpatterns = [
     
     # Listar technicians
     path('technicians/', TechnicianViewSet.as_view({'get': 'list'}), name='technician-list'),
+    # Estadísticas de actividad de técnicos
+    path('technicians/activity-stats/', TechnicianActivityStatsView.as_view(), name='technicians-activity-stats'),
     # Obtener información de un técnico
     path('technicians/<str:pk>/', TechnicianViewSet.as_view({'get': 'retrieve'}), name='technician-detail'),
     

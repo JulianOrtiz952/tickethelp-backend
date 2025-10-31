@@ -540,3 +540,29 @@ class TokenUserDataView(APIView):
                 "message": "Error al obtener datos del usuario",
                 "error": str(e)
             }, status=status.HTTP_401_UNAUTHORIZED)
+
+
+class TechnicianActivityStatsView(APIView):
+    """
+    Devuelve el conteo de técnicos activos e inactivos según el atributo is_active.
+
+    GET /api/technicians/activity-stats/
+    Respuesta:
+    {
+      "total_tecnicos": 10,
+      "activos": 7,
+      "inactivos": 3
+    }
+    """
+    permission_classes = [IsAdmin]
+
+    def get(self, request):
+        technicians = User.objects.filter(role=User.Role.TECH)
+        activos = technicians.filter(is_active=True).count()
+        inactivos = technicians.filter(is_active=False).count()
+
+        return Response({
+            "total_tecnicos": technicians.count(),
+            "activos": activos,
+            "inactivos": inactivos
+        }, status=status.HTTP_200_OK)

@@ -44,6 +44,7 @@ INSTALLED_APPS = [
     "tickets",
     "users",
     "notifications.apps.NotificationsConfig",
+    "reports",
 ]
 
 # -----------------------------

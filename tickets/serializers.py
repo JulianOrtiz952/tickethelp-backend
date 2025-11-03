@@ -3,6 +3,7 @@ from django.db.models import Count, Max
 from django.utils import timezone
 from users.models import User
 from tickets.models import Ticket, Estado, StateChangeRequest
+from tickets.models import TicketHistory
 
 class TicketSerializer(serializers.ModelSerializer):
 
@@ -61,9 +62,9 @@ class EstadoSerializer(serializers.ModelSerializer):
 
 
 class LeastBusyTechnicianSerializer(serializers.Serializer):
-    email = serializers.EmailField(read_only=True)
+    id = serializers.CharField(read_only=True)
 
-    def get_least_busy_technician_email(self):
+    def get_least_busy_technician_id(self):
         technician = User.objects.filter(
             role=User.Role.TECH, 
             is_active=True
@@ -71,11 +72,11 @@ class LeastBusyTechnicianSerializer(serializers.Serializer):
             ticket_count=Count('tickets_asignados')
         ).order_by('ticket_count', '?').first()
         
-        return technician.email if technician else None
+        return technician.document if technician else None
 
     def to_representation(self, instance):
         return {
-            'email': self.get_least_busy_technician_email()
+            'id': self.get_least_busy_technician_id()
         }
 
 class ChangeTechnicianSerializer(serializers.Serializer):
@@ -178,3 +179,23 @@ class PendingApprovalSerializer(serializers.ModelSerializer):
         fields = ['id', 'ticket', 'ticket_titulo', 'requested_by', 'requested_by_name', 
                  'from_state', 'from_state_name', 'to_state', 'to_state_name', 
                  'reason', 'created_at', 'status']
+
+# =============================================================================
+# HU13B - Historial: Serializer para el historial de cambios de estado del ticket
+# =============================================================================
+# Este serializer serializa el modelo TicketHistory
+# =============================================================================
+
+class TicketHistorySerializer(serializers.ModelSerializer):
+    tecnico_nombre = serializers.CharField(source='tecnico.get_full_name', read_only=True)
+    tecnico_documento = serializers.CharField(source='tecnico.document', read_only=True)
+    tecnico_anterior_nombre = serializers.CharField(source='tecnico_anterior.get_full_name', read_only=True)
+    tecnico_anterior_documento = serializers.CharField(source='tecnico_anterior.document', read_only=True)
+    realizado_por_nombre = serializers.CharField(source='realizado_por.get_full_name', read_only=True)
+    realizado_por_documento = serializers.CharField(source='realizado_por.document', read_only=True)
+
+    class Meta:
+        model = TicketHistory
+        fields = ['id', 'ticket', 'estado', 'estado_anterior', 'tecnico', 'tecnico_nombre', 'tecnico_documento',
+                 'tecnico_anterior', 'tecnico_anterior_nombre', 'tecnico_anterior_documento',
+                 'accion', 'fecha', 'realizado_por', 'realizado_por_nombre', 'realizado_por_documento', 'datos_ticket']

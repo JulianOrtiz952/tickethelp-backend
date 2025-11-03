@@ -5,9 +5,13 @@ from rest_framework.permissions import AllowAny
 from django.shortcuts import get_object_or_404
 from django.contrib.auth import get_user_model
 from django.utils import timezone
+import tickets
 from tickets.models import Ticket, Estado, StateChangeRequest
 from tickets.serializers import TicketSerializer, EstadoSerializer, LeastBusyTechnicianSerializer, ChangeTechnicianSerializer, ActiveTechnicianSerializer, StateChangeSerializer, StateApprovalSerializer, PendingApprovalSerializer
 from notifications.services import NotificationService
+from rest_framework import viewsets, permissions
+from .models import TicketHistory
+from .serializers import TicketHistorySerializer
 
 User = get_user_model()
 
@@ -25,7 +29,45 @@ class TicketAV(ListCreateAPIView):
                 'message': 'Debe crear al menos un técnico activo antes de crear tickets.'
             }, status=status.HTTP_400_BAD_REQUEST)
         
-        return super().create(request, *args, **kwargs)
+        # Obtener el usuario que está creando el ticket
+        user_document = request.query_params.get('user_document')
+        if user_document:
+            try:
+                usuario_creador = User.objects.get(document=user_document)
+            except User.DoesNotExist:
+                usuario_creador = None
+        else:
+            usuario_creador = getattr(request, 'user', None)
+        
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        
+        # Crear el ticket
+        ticket = serializer.save()
+        
+        # Crear entrada en el historial con todos los datos del ticket
+        datos_ticket = {
+            'titulo': ticket.titulo,
+            'descripcion': ticket.descripcion,
+            'equipo': ticket.equipo,
+            'administrador': ticket.administrador.document if ticket.administrador else None,
+            'administrador_nombre': ticket.administrador.get_full_name() if ticket.administrador else None,
+            'cliente': ticket.cliente.document if ticket.cliente else None,
+            'cliente_nombre': ticket.cliente.get_full_name() if ticket.cliente else None,
+            'tecnico': ticket.tecnico.document if ticket.tecnico else None,
+            'tecnico_nombre': ticket.tecnico.get_full_name() if ticket.tecnico else None,
+            'estado': ticket.estado.nombre if ticket.estado else None,
+        }
+        
+        TicketHistory.crear_entrada_historial(
+            ticket=ticket,
+            accion="Creación del ticket",
+            realizado_por=usuario_creador,
+            datos_ticket=datos_ticket
+        )
+        
+        headers = self.get_success_headers(serializer.data)
+        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
 
 class EstadoAV(ListCreateAPIView):
 
@@ -44,7 +86,7 @@ class LeastBusyTechnicianAV(RetrieveAPIView):
         serializer = self.get_serializer()
         data = serializer.to_representation(None)
         
-        if data['email']:
+        if data['id']:
             return Response(data)
         else:
             return Response(data, status=status.HTTP_404_NOT_FOUND)
@@ -59,11 +101,29 @@ class ChangeTechnicianAV(UpdateAPIView):
     
     def put(self, request, *args, **kwargs):
         ticket = self.get_object()
+        
+        # Validar que el ticket no esté finalizado
+        if ticket.estado and ticket.estado.es_final:
+            return Response({
+                'error': 'Ticket finalizado',
+                'message': 'No se puede modificar un ticket que ya ha sido finalizado.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
         serializer = self.get_serializer(data=request.data)
 
         if serializer.is_valid():
             new_technician = serializer.validated_data['documento_tecnico']
             old_technician = ticket.tecnico
+            
+            # Obtener el usuario que está realizando el cambio
+            user_document = request.query_params.get('user_document')
+            if user_document:
+                try:
+                    usuario_cambio = User.objects.get(document=user_document)
+                except User.DoesNotExist:
+                    usuario_cambio = None
+            else:
+                usuario_cambio = getattr(request, 'user', None)
             
             ticket.tecnico = new_technician
             try:
@@ -72,6 +132,15 @@ class ChangeTechnicianAV(UpdateAPIView):
                 logger = __import__('logging').getLogger(__name__)
                 logger.error(f"Error guardando ticket al cambiar técnico: {e}")
                 return Response({'error': 'error_saving_ticket', 'message': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+            # Crear entrada en el historial
+            TicketHistory.crear_entrada_historial(
+                ticket=ticket,
+                accion=f"Cambio de técnico de {old_technician.get_full_name() if old_technician else 'Sin técnico'} a {new_technician.get_full_name()}",
+                realizado_por=usuario_cambio,
+                tecnico_anterior=old_technician,
+                estado_anterior=ticket.estado.nombre if ticket.estado else None
+            )
 
             return Response({
                 'message': 'Técnico actualizado correctamente',
@@ -119,6 +188,13 @@ class StateChangeAV(UpdateAPIView):
     def put(self, request, *args, **kwargs):
         ticket = self.get_object()
         
+        # Validar que el ticket no esté finalizado
+        if ticket.estado and ticket.estado.es_final:
+            return Response({
+                'error': 'Ticket finalizado',
+                'message': 'No se puede modificar un ticket que ya ha sido finalizado.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
         # Obtener usuario desde parámetros de consulta o request.user
         user_document = request.query_params.get('user_document')
         if user_document:
@@ -148,6 +224,7 @@ class StateChangeAV(UpdateAPIView):
         if serializer.is_valid():
             to_state = serializer.validated_data['to_state']
             reason = serializer.validated_data.get('reason', '')
+            estado_anterior = ticket.estado.nombre if ticket.estado else None
             
             if to_state.es_final:
                 state_request = StateChangeRequest.objects.create(
@@ -162,7 +239,7 @@ class StateChangeAV(UpdateAPIView):
                 NotificationService.enviar_solicitud_cambio_estado(state_request)
                 
                 return Response({
-                    'message': 'Solicitud de cambio de estado enviada para aprobación',
+                    'message': 'El estado final requiere validación del administrador, solicitud enviada correctamente',
                     'request_id': state_request.id,
                     'status': 'pending_approval',
                     'to_state': to_state.nombre
@@ -170,6 +247,14 @@ class StateChangeAV(UpdateAPIView):
             else:
                 ticket.estado = to_state
                 ticket.save()
+                
+                # Crear entrada en el historial
+                TicketHistory.crear_entrada_historial(
+                    ticket=ticket,
+                    accion=f"Cambio de estado de '{estado_anterior}' a '{to_state.nombre}'",
+                    realizado_por=user,
+                    estado_anterior=estado_anterior
+                )
                 
                 return Response({
                     'message': 'Estado actualizado correctamente',
@@ -222,7 +307,15 @@ class StateApprovalAV(UpdateAPIView):
             action = serializer.validated_data['action']
             
             if action == 'approve':
+                # Validar que el ticket no esté finalizado antes de aprobar
+                if state_request.ticket.estado and state_request.ticket.estado.es_final:
+                    return Response({
+                        'error': 'Ticket ya finalizado',
+                        'message': 'El ticket ya está en estado final, no se pueden realizar más cambios.'
+                    }, status=status.HTTP_400_BAD_REQUEST)
+                
                 # Aprobar el cambio de estado
+                estado_anterior = state_request.ticket.estado.nombre if state_request.ticket.estado else None
                 state_request.ticket.estado = state_request.to_state
                 state_request.ticket.save()
                 
@@ -230,6 +323,18 @@ class StateApprovalAV(UpdateAPIView):
                 state_request.approved_by = user
                 state_request.approved_at = timezone.now()
                 state_request.save()
+                
+                # Crear entrada en el historial
+                accion_texto = f"Cambio de estado aprobado de '{estado_anterior}' a '{state_request.to_state.nombre}'"
+                if state_request.to_state.es_final:
+                    accion_texto += " - Ticket finalizado"
+                
+                TicketHistory.crear_entrada_historial(
+                    ticket=state_request.ticket,
+                    accion=accion_texto,
+                    realizado_por=user,
+                    estado_anterior=estado_anterior
+                )
                 
                 # Enviar notificación al técnico
                 NotificationService.enviar_aprobacion_cambio_estado(state_request)
@@ -240,7 +345,8 @@ class StateApprovalAV(UpdateAPIView):
                 return Response({
                     'message': 'Cambio de estado aprobado y aplicado',
                     'ticket_id': state_request.ticket.pk,
-                    'new_state': state_request.to_state.nombre
+                    'new_state': state_request.to_state.nombre,
+                    'is_final': state_request.to_state.es_final
                 }, status=status.HTTP_200_OK)
             
             else:  # reject
@@ -279,4 +385,140 @@ class PendingApprovalsAV(ListAPIView):
             'message': 'Solicitudes de cambio de estado pendientes',
             'total_pending': queryset.count(),
             'requests': serializer.data
+        }, status=status.HTTP_200_OK)
+
+class TicketListView(ListAPIView):
+    serializer_class = TicketSerializer
+
+    def get_queryset(self):
+        user_document = self.request.query_params.get('user_document') #Cambiar poa request.user cuando haya auth 
+
+        if not user_document or len(user_document.strip()) == 0:
+            return Response({
+                'error': 'Solicitud inválida',
+                'message': 'El parámetro "user_document" está vacío o tiene un formato incorrecto.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            user = User.objects.get(document=user_document)
+        except User.DoesNotExist:
+            return Response({
+                'error': 'Usuario no encontrado',
+                'message': 'El documento de usuario proporcionado no existe'
+            }, status=status.HTTP_404_NOT_FOUND)
+
+        if user.role == User.Role.TECH:
+            tickets = Ticket.objects.filter(tecnico=user)
+            if not tickets:
+                return Response({
+                    'message': 'No tienes tickets registrados.'
+                }, status=status.HTTP_200_OK)
+            return tickets
+
+        elif user.role == User.Role.ADMIN:
+            tickets = Ticket.objects.all()
+            if not tickets:
+                return Response({
+                    'message': 'No tienes tickets registrados.'
+                }, status=status.HTTP_200_OK)
+            return tickets
+
+        elif user.role == User.Role.CLIENT:
+            tickets = Ticket.objects.filter(cliente=user)
+            if not tickets:
+                return Response({
+                    'message': 'No tienes tickets registrados.'
+                }, status=status.HTTP_200_OK)
+            return tickets
+
+        return Ticket.objects.none()
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.get_queryset()
+
+        if isinstance(queryset, Response):
+            return queryset
+
+        serializer = self.get_serializer(queryset, many=True)
+        return Response({
+            'message': 'Lista de tickets',
+            'total_tickets': queryset.count(),
+            'tickets': serializer.data
+        }, status=status.HTTP_200_OK)
+
+
+# =============================================================================
+# HU13B - Historial: Vista para el historial de cambios de estado del ticket
+# =============================================================================
+# Esta vista permite consultar el historial de un ticket (solo administrador).
+# =============================================================================
+
+class TicketHistoryAV(RetrieveAPIView):
+    """
+    Endpoint para consultar el historial completo de un ticket por su ID.
+    Solo accesible para administradores.
+    """
+    serializer_class = TicketHistorySerializer
+    permission_classes = [AllowAny]  # Temporal, cambiar a IsAdminUser cuando haya autenticación
+    
+    def get_queryset(self):
+        ticket_id = self.kwargs.get('ticket_id')
+        if ticket_id:
+            return TicketHistory.objects.filter(ticket_id=ticket_id).order_by('-fecha')
+        return TicketHistory.objects.none()
+    
+    def get_object(self):
+        ticket_id = self.kwargs.get('ticket_id')
+        
+        # Validar que el ticket existe
+        ticket = get_object_or_404(Ticket, pk=ticket_id)
+        
+        # Validar que el usuario es administrador
+        user_document = self.request.query_params.get('user_document')
+        if user_document:
+            try:
+                user = User.objects.get(document=user_document)
+            except User.DoesNotExist:
+                return Response({
+                    'error': 'Usuario no encontrado',
+                    'message': 'El documento de usuario proporcionado no existe'
+                }, status=status.HTTP_400_BAD_REQUEST)
+        else:
+            user = getattr(self.request, 'user', None)
+            if not user or not user.is_authenticated:
+                return Response({
+                    'error': 'Usuario requerido',
+                    'message': 'Debe proporcionar user_document como parámetro de consulta'
+                }, status=status.HTTP_400_BAD_REQUEST)
+        
+        if user.role != User.Role.ADMIN:
+            return Response({
+                'error': 'No autorizado',
+                'message': 'Solo los administradores pueden consultar el historial de tickets'
+            }, status=status.HTTP_403_FORBIDDEN)
+        
+        # Retornar el queryset completo (no un objeto individual)
+        return self.get_queryset()
+    
+    def retrieve(self, request, *args, **kwargs):
+        queryset = self.get_object()
+        
+        # Si get_object retornó un Response (error), retornarlo
+        if isinstance(queryset, Response):
+            return queryset
+        
+        serializer = self.get_serializer(queryset, many=True)
+        
+        # Obtener información del ticket
+        ticket_id = self.kwargs.get('ticket_id')
+        ticket = get_object_or_404(Ticket, pk=ticket_id)
+        
+        return Response({
+            'message': 'Historial del ticket obtenido exitosamente',
+            'ticket_id': ticket_id,
+            'ticket_titulo': ticket.titulo,
+            'estado_actual': ticket.estado.nombre if ticket.estado else 'Sin estado',
+            'tecnico_actual': ticket.tecnico.get_full_name() if ticket.tecnico else 'Sin técnico asignado',
+            'total_registros': queryset.count(),
+            'historial': serializer.data
         }, status=status.HTTP_200_OK)

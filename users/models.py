@@ -10,7 +10,7 @@ class User(AbstractUser):
     username = None
     email = models.EmailField(unique=True)
     document = models.CharField(max_length=10, unique=True, primary_key=True)
-    number    = models.CharField(max_length=10, unique=True, blank=True, null=True)
+    number    = models.CharField(max_length=20, unique=True, blank=True, null=True)
     role      = models.CharField(max_length=20, choices=Role.choices, default=Role.CLIENT)
     is_active = models.BooleanField(default=True)
     must_change_password = models.BooleanField(default=False)

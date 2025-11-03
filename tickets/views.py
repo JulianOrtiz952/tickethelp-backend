@@ -2,6 +2,8 @@ from rest_framework.generics import ListCreateAPIView, RetrieveAPIView, UpdateAP
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny
+from tickets.permissions import IsAdmin, IsAdminOrTechnician
+from tickets.permissions import IsAdmin, IsTechnician
 from django.shortcuts import get_object_or_404
 from django.contrib.auth import get_user_model
 from django.utils import timezone
@@ -17,6 +19,7 @@ class TicketAV(ListCreateAPIView):
 
     queryset = Ticket.objects.all()
     serializer_class = TicketSerializer
+    permission_classes = [IsAdmin]
 
     def create(self, request, *args, **kwargs):
         active_technicians = User.objects.filter(role=User.Role.TECH, is_active=True).count()
@@ -32,11 +35,13 @@ class EstadoAV(ListCreateAPIView):
 
     queryset = Estado.objects.all().order_by("nombre")
     serializer_class = EstadoSerializer
+    permission_classes = [IsAdmin]
 
 
 class LeastBusyTechnicianAV(RetrieveAPIView):
     
     serializer_class = LeastBusyTechnicianSerializer
+    permission_classes = [IsAdmin]
     
     def get_object(self):
         return None
@@ -53,6 +58,7 @@ class LeastBusyTechnicianAV(RetrieveAPIView):
 class ChangeTechnicianAV(UpdateAPIView):
     http_method_names = ['put', 'patch', 'options', 'head']
     serializer_class = ChangeTechnicianSerializer
+    permission_classes = [IsAdmin]
     
     def get_object(self):
         ticket_id = self.kwargs.get('ticket_id')
@@ -94,6 +100,7 @@ class ChangeTechnicianAV(UpdateAPIView):
 class ActiveTechniciansAV(ListAPIView):
     
     serializer_class = ActiveTechnicianSerializer
+    permission_classes = [IsAdminOrTechnician]
     
     def get_queryset(self):
         return User.objects.filter(role=User.Role.TECH, is_active=True).order_by('first_name', 'last_name')
@@ -110,7 +117,7 @@ class ActiveTechniciansAV(ListAPIView):
 
 
 class StateChangeAV(UpdateAPIView):
-    permission_classes = [AllowAny]
+    permission_classes = [IsTechnician]
     serializer_class = StateChangeSerializer
     
     def get_object(self):
@@ -182,7 +189,7 @@ class StateChangeAV(UpdateAPIView):
 
 
 class StateApprovalAV(UpdateAPIView):
-    permission_classes = [AllowAny]
+    permission_classes = [IsAdmin]
     serializer_class = StateApprovalSerializer
     
     def get_object(self):
@@ -266,7 +273,7 @@ class StateApprovalAV(UpdateAPIView):
 
 
 class PendingApprovalsAV(ListAPIView):
-    permission_classes = [AllowAny]
+    permission_classes = [IsAdmin]
     serializer_class = PendingApprovalSerializer
     
     def get_queryset(self):

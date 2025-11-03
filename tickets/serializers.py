@@ -3,6 +3,7 @@ from django.db.models import Count, Max
 from django.utils import timezone
 from users.models import User
 from tickets.models import Ticket, Estado, StateChangeRequest
+from tickets.models import TicketHistory
 
 class TicketSerializer(serializers.ModelSerializer):
 

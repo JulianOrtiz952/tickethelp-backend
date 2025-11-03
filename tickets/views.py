@@ -15,6 +15,9 @@ from tickets.serializers import (
     TicketTimelineSerializer
 )
 from notifications.services import NotificationService
+from rest_framework import viewsets, permissions
+from .models import TicketHistory
+from .serializers import TicketHistorySerializer
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
@@ -64,6 +67,14 @@ class ChangeTechnicianAV(UpdateAPIView):
     
     def put(self, request, *args, **kwargs):
         ticket = self.get_object()
+        
+        # Validar que el ticket no esté finalizado
+        if ticket.estado and ticket.estado.es_final:
+            return Response({
+                'error': 'Ticket finalizado',
+                'message': 'No se puede modificar un ticket que ya ha sido finalizado.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
         serializer = self.get_serializer(data=request.data)
 
         if not serializer.is_valid():

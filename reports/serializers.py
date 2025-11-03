@@ -30,3 +30,15 @@ class TechnicianPerformanceSerializer(serializers.Serializer):
         help_text="Porcentaje de éxito en la resolución de tickets"
     )
 
+
+class ActiveClientsEvolutionSerializer(serializers.Serializer):
+    """
+    Evolución anual de clientes activos (con al menos un ticket 'open' en el mes).
+    - year: año consultado
+    - total_clientes: clientes únicos en todo el año
+    - mensual: mapa {"01": 10, ..., "12": 5}
+    """
+    year = serializers.IntegerField()
+    total_clientes = serializers.IntegerField()
+    mensual = serializers.DictField(child=serializers.IntegerField(), help_text="Mapa mes->cantidad de clientes únicos")
+

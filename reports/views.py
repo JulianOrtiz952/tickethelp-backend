@@ -9,11 +9,14 @@ from django.db.models.functions import TruncMonth, Coalesce
 from django.db.models.functions.datetime import ExtractHour, ExtractWeekDay
 from tickets.models import Ticket, StateChangeRequest
 from tickets.permissions import IsAdmin
+from django.db.models import Avg, F, OuterRef, Subquery, ExpressionWrapper, DurationField
+
 from .serializers import (
     GeneralStatsSerializer,
     TechnicianPerformanceSerializer,
     ActiveClientsEvolutionSerializer,
     ActivityHeatmapSerializer,
+    AverageResolutionTimeSerializer
 )
 
 User = get_user_model()
@@ -234,3 +237,73 @@ class ActivityHeatmapView(APIView):
         }
         serializer = ActivityHeatmapSerializer(payload)
         return Response(serializer.data, status=status.HTTP_200_OK)
+
+class AverageResolutionTimeView(APIView):
+    """
+    Tiempo promedio de solución:
+    - Considera tickets en estado final (id=5).
+    - resolved_at = primera aprobación (approved_at) hacia estado 5.
+      Si no hay, se toma actualizado_en como respaldo.
+    - Promedio = avg(resolved_at - creado_en).
+    """
+    permission_classes = [IsAdmin]
+
+    FINAL_STATE_ID = 5  # estado "finalizado"
+
+    def get(self, request):
+        # Subquery: primer approved_at hacia el estado final
+        first_approved_subq = (
+            StateChangeRequest.objects
+            .filter(
+                ticket=OuterRef('pk'),
+                to_state_id=self.FINAL_STATE_ID,
+                status=StateChangeRequest.Status.APPROVED,
+            )
+            .order_by('approved_at')
+            .values('approved_at')[:1]
+        )
+
+        # Tickets finalizados (estado_id=5)
+        base_qs = (
+            Ticket.objects
+            .filter(estado_id=self.FINAL_STATE_ID)
+            .annotate(resolved_at=Subquery(first_approved_subq))
+        )
+
+        # resolved_at de respaldo: actualizado_en
+        base_qs = base_qs.annotate(
+            resolved_at_final=Coalesce(F('resolved_at'), F('actualizado_en'))
+        )
+
+        # duration = resolved_at_final - creado_en
+        duration_expr = ExpressionWrapper(
+            F('resolved_at_final') - F('creado_en'),
+            output_field=DurationField()
+        )
+
+        agg = base_qs.aggregate(
+            avg_duration=Avg(duration_expr),
+            total=Count('id')
+        )
+
+        avg_duration = agg['avg_duration']
+        total = agg['total'] or 0
+
+        if not avg_duration or total == 0:
+            payload = {
+                'promedio_horas': 0.0,
+                'promedio_dias': 0.0,
+                'tickets_contemplados': 0
+            }
+            ser = AverageResolutionTimeSerializer(payload)
+            return Response(ser.data, status=status.HTTP_200_OK)
+
+        # Convertir a horas/días
+        avg_seconds = avg_duration.total_seconds()
+        payload = {
+            'promedio_horas': round(avg_seconds / 3600.0, 2),
+            'promedio_dias': round(avg_seconds / 86400.0, 2),
+            'tickets_contemplados': int(total)
+        }
+        ser = AverageResolutionTimeSerializer(payload)
+        return Response(ser.data, status=status.HTTP_200_OK)

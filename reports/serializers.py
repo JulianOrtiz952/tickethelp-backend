@@ -56,3 +56,7 @@ class ActivityHeatmapSerializer(serializers.Serializer):
     matrix = serializers.ListField(child=serializers.ListField(child=serializers.IntegerField()))
     max_value = serializers.IntegerField()
 
+class AverageResolutionTimeSerializer(serializers.Serializer):
+    promedio_horas = serializers.FloatField()
+    promedio_dias = serializers.FloatField()
+    tickets_contemplados = serializers.IntegerField()

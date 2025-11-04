@@ -36,7 +36,7 @@ class GeneralStatsView(APIView):
         Responde con la cantidad de tickets abiertos y finalizados
         """
         tickets_open_count = Ticket.objects.filter(estado__codigo='open').count()
-        tickets_finalizados_count = Ticket.objects.filter(estado__codigo='closed').count()
+        tickets_finalizados_count = Ticket.objects.filter(estado_id=5).count()
         stats_data = {
             'tickets_abiertos': tickets_open_count,
             'tickets_finalizados': tickets_finalizados_count

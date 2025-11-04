@@ -6,6 +6,7 @@ from rest_framework.response import Response
 from rest_framework import generics
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
+from tickets.permissions import IsAdminOrTechnicianOrClient
 from django.shortcuts import get_object_or_404
 from django.core.exceptions import ObjectDoesNotExist
 import re
@@ -133,6 +134,9 @@ class TechnicianViewSet(BaseRoleViewSet):
     ROLE = 'TECH'
 class ClientViewSet(BaseRoleViewSet):
     ROLE = 'CLIENT'
+    permission_classes = [IsAdminOrTechnicianOrClient]
+def get_serializer_class(self):
+        return UserCreateSerializer if self.action in ('create', 'update', 'partial_update') else UserReadSerializer
 
 class UserUpdateView(generics.RetrieveUpdateAPIView):
     permission_classes = [permissions.IsAuthenticated]
@@ -203,6 +207,7 @@ class ChangePasswordByIdView(generics.GenericAPIView):
     
 # Función para consultar cliente por documento con manejo de error personalizado
 @api_view(['GET'])
+@permission_classes([IsAdminOrTechnicianOrClient])
 @permission_classes([IsAdmin])
 def get_client_by_document(request, document):
     """

@@ -28,21 +28,21 @@ class GeneralStatsView(APIView):
     Solo accesible para administradores.
     """
     permission_classes = [IsAdmin]
+    FINAL_STATE_ID = 5
 
     def get(self, request):
-        """
-        Retorna las estadísticas generales del sistema:
-        - Cantidad total de tickets con estado "Open"
-        - Cantidad total de tickets con estado "closed" (Finalizado)
-        
-        Returns:
-        Responde con la cantidad de tickets abiertos y finalizados
-        """
-        tickets_open_count = Ticket.objects.filter(estado__codigo='open').count()
-        tickets_finalizados_count = Ticket.objects.filter(estado_id=5).count()
+        # Conteos
+        total_tickets = Ticket.objects.count()
+        tickets_finalizados_count = Ticket.objects.filter(estado_id=self.FINAL_STATE_ID).count()
+        tickets_abiertos_count = Ticket.objects.exclude(estado_id=self.FINAL_STATE_ID).count()
+
+        # Promedio de éxito (sobre la totalidad de tickets)
+        promedio_exito = round((tickets_finalizados_count / total_tickets) * 100.0, 2) if total_tickets else 0.0
+
         stats_data = {
-            'tickets_abiertos': tickets_open_count,
-            'tickets_finalizados': tickets_finalizados_count
+            'tickets_abiertos': tickets_abiertos_count,
+            'tickets_finalizados': tickets_finalizados_count,
+            'promedio_exito': promedio_exito,
         }
         serializer = GeneralStatsSerializer(stats_data)
         return Response(serializer.data, status=status.HTTP_200_OK)

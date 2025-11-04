@@ -7,12 +7,14 @@ class GeneralStatsSerializer(serializers.Serializer):
     Retorna la cantidad de tickets abiertos y cerrados.
     """
     tickets_abiertos = serializers.IntegerField(
-        help_text="Cantidad total de tickets con estado 'Open'"
+        help_text="Cantidad total de tickets que NO están en estado 5"
     )
     tickets_finalizados = serializers.IntegerField(
-        help_text="Cantidad total de tickets con estado 'closed' (Finalizado)"
+        help_text="Cantidad total de tickets en estado 5"
     )
-
+    promedio_exito = serializers.FloatField(
+        help_text="Porcentaje de éxito = tickets_finalizados / total_tickets * 100"
+    )
 
 class TechnicianPerformanceSerializer(serializers.Serializer):
     """

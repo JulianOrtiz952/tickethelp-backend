@@ -42,3 +42,17 @@ class ActiveClientsEvolutionSerializer(serializers.Serializer):
     total_clientes = serializers.IntegerField()
     mensual = serializers.DictField(child=serializers.IntegerField(), help_text="Mapa mes->cantidad de clientes únicos")
 
+
+class ActivityHeatmapSerializer(serializers.Serializer):
+    """
+    Matriz de heatmap de actividad de cambios de estado.
+    - days: etiquetas de días (Lun..Dom)
+    - ranges: etiquetas de franjas (00-06,06-12,12-18,18-24)
+    - matrix: 4x7 con conteos por [fila=franja][col=día]
+    - max_value: máximo en la matriz (para escala)
+    """
+    days = serializers.ListField(child=serializers.CharField())
+    ranges = serializers.ListField(child=serializers.CharField())
+    matrix = serializers.ListField(child=serializers.ListField(child=serializers.IntegerField()))
+    max_value = serializers.IntegerField()
+

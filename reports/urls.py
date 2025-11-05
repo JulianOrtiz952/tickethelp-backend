@@ -9,7 +9,9 @@ from reports.views import (
     FlowFunnelView,
     StateDistributionView,
     TicketAgingTopView,
-    ResolutionsByWeekdayView
+    ResolutionsByWeekdayView,
+    TTAByStateView,
+    TTATotalView
 )
 
 urlpatterns = [
@@ -23,5 +25,7 @@ urlpatterns = [
     path('stats/status-distribution/', StateDistributionView.as_view(), name='status-distribution'),
     path('stats/aging-top/', TicketAgingTopView.as_view(), name='aging-top'),
     path('stats/resolutions-by-weekday/', ResolutionsByWeekdayView.as_view(), name='resolutions-by-weekday'),
+    path('stats/tta/by-state/', TTAByStateView.as_view(), name='tta-by-state'),
+    path('stats/tta/total/', TTATotalView.as_view(), name='tta-total'),
 ]
 

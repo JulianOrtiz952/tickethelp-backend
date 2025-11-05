@@ -1,6 +1,7 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
+from collections import defaultdict
 from django.utils import timezone
 from datetime import datetime, timedelta
 from django.contrib.auth import get_user_model
@@ -22,7 +23,9 @@ from .serializers import (
     StateDistributionItemSerializer,
     StateDistributionResponseSerializer,
     TicketAgingItemSerializer,
-    WeekdayResolutionCountSerializer
+    WeekdayResolutionCountSerializer,
+    TTAStateItemSerializer,
+    TTATotalSerializer
 )
 
 User = get_user_model()
@@ -712,4 +715,155 @@ class ResolutionsByWeekdayView(APIView):
             'domingo':    int(totals_by_idx[6]),
         }
         ser = WeekdayResolutionCountSerializer(payload)
+        return Response(ser.data, status=status.HTTP_200_OK)
+
+def _compute_state_durations():
+    """
+    Devuelve dos estructuras:
+      - sums: dict[state_id] = timedelta total tiempo en ese estado (hasta su siguiente transición aprobada)
+      - counts: dict[state_id] = int cantidad de intervalos válidos
+      - meta: dict[state_id] = (codigo, nombre)
+    Lógica:
+      * Para cada ticket:
+           - ordenar SCR aprobadas por approved_at
+           - primer intervalo: desde ticket.creado_en -> first.approved_at (para first.from_state)
+           - intervalos internos: approved_at[i-1] -> approved_at[i] (para SCR[i].from_state)
+      * No se incluye el último estado al que entra el ticket (no hay salida medible).
+    """
+    tznow = timezone.now()  # no se usa para intervalos (solo por si se extiende)
+    sums = defaultdict(timedelta)
+    counts = defaultdict(int)
+    meta = {}
+
+    # Traer todos los cambios aprobados con info mínima
+    scr_qs = (
+        StateChangeRequest.objects
+        .filter(status=StateChangeRequest.Status.APPROVED, approved_at__isnull=False)
+        .select_related('ticket', 'from_state', 'to_state')
+        .order_by('ticket_id', 'approved_at', 'id')
+        .values(
+            'ticket_id', 'approved_at',
+            'from_state_id', 'from_state__codigo', 'from_state__nombre',
+            'to_state_id'
+        )
+    )
+
+    # Agrupar por ticket (ya viene ordenado por ticket_id, approved_at)
+    current_ticket_id = None
+    bucket = []  # lista de cambios (dicts) de un ticket
+
+    def flush_bucket():
+        # procesa un ticket
+        nonlocal bucket
+        if not bucket:
+            return
+
+        # Necesitamos el creado_en del ticket
+        ticket_id = bucket[0]['ticket_id']
+        try:
+            t = Ticket.objects.only('id', 'creado_en').get(pk=ticket_id)
+        except Ticket.DoesNotExist:
+            bucket = []
+            return
+
+        # Primer intervalo: creado_en -> approved_at del primer cambio (para first.from_state)
+        first = bucket[0]
+        start = t.creado_en
+        end = first['approved_at']
+        if start and end and end > start:
+            sid = first['from_state_id']
+            if sid:
+                sums[sid] += (end - start)
+                counts[sid] += 1
+                meta.setdefault(sid, (first['from_state__codigo'] or '', first['from_state__nombre'] or ''))
+
+        # Intervalos internos: approved_at[i-1] -> approved_at[i] (para SCR[i].from_state)
+        for i in range(1, len(bucket)):
+            prev_end = bucket[i-1]['approved_at']
+            cur = bucket[i]
+            cur_state_id = cur['from_state_id']
+            cur_state_cod = cur['from_state__codigo'] or ''
+            cur_state_nom = cur['from_state__nombre'] or ''
+
+            if prev_end and cur['approved_at'] and cur['approved_at'] > prev_end and cur_state_id:
+                sums[cur_state_id] += (cur['approved_at'] - prev_end)
+                counts[cur_state_id] += 1
+                meta.setdefault(cur_state_id, (cur_state_cod, cur_state_nom))
+
+        # Limpia para siguiente ticket
+        bucket = []
+
+    for row in scr_qs:
+        if current_ticket_id is None:
+            current_ticket_id = row['ticket_id']
+
+        if row['ticket_id'] != current_ticket_id:
+            flush_bucket()
+            current_ticket_id = row['ticket_id']
+
+        bucket.append(row)
+
+    # último grupo
+    flush_bucket()
+
+    return sums, counts, meta
+
+
+class TTAByStateView(APIView):
+    """
+    Promedio de tiempo por estado (tiempo que permanece un ticket en ese estado antes de salir).
+    """
+    permission_classes = [IsAdmin]
+
+    def get(self, request):
+        sums, counts, meta = _compute_state_durations()
+
+        # Construye respuesta para TODOS los estados existentes (aunque tengan 0)
+        items = []
+        for e in Estado.objects.all().values('id', 'codigo', 'nombre'):
+            sid = e['id']
+            total = sums.get(sid, timedelta())
+            n = counts.get(sid, 0)
+            avg_seconds = (total.total_seconds() / n) if n else 0.0
+            items.append({
+                'estado_id': sid,
+                'estado_codigo': e['codigo'],
+                'estado_nombre': e['nombre'],
+                'promedio_segundos': round(avg_seconds, 2),
+                'promedio_horas': round(avg_seconds / 3600.0, 2),
+                'promedio_dias': round(avg_seconds / 86400.0, 2),
+                'muestras': int(n),
+            })
+
+        # (Opcional) orden por flujo natural (por id) o por mayor promedio
+        # items.sort(key=lambda x: x['estado_id'])
+        items.sort(key=lambda x: x['promedio_segundos'], reverse=True)
+
+        ser = TTAStateItemSerializer(items, many=True)
+        return Response(ser.data, status=status.HTTP_200_OK)
+
+
+class TTATotalView(APIView):
+    """
+    TTA total = suma de los promedios por estado.
+    """
+    permission_classes = [IsAdmin]
+
+    def get(self, request):
+        sums, counts, meta = _compute_state_durations()
+
+        # Suma de promedios (solo estados con al menos 1 muestra)
+        tta_seconds = 0.0
+        for sid, total in sums.items():
+            n = counts.get(sid, 0)
+            if n > 0:
+                tta_seconds += (total.total_seconds() / n)
+
+        payload = {
+            'tta_segundos': round(tta_seconds, 2),
+            'tta_horas': round(tta_seconds / 3600.0, 2),
+            'tta_dias': round(tta_seconds / 86400.0, 2),
+            'estados_sumados': sum(1 for sid in counts if counts[sid] > 0),
+        }
+        ser = TTATotalSerializer(payload)
         return Response(ser.data, status=status.HTTP_200_OK)

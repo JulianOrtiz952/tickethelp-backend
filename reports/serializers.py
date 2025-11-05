@@ -145,3 +145,18 @@ class WeekdayResolutionCountSerializer(serializers.Serializer):
     viernes = serializers.IntegerField()
     sabado = serializers.IntegerField()
     domingo = serializers.IntegerField()
+
+class TTAStateItemSerializer(serializers.Serializer):
+    estado_id = serializers.IntegerField()
+    estado_codigo = serializers.CharField()
+    estado_nombre = serializers.CharField()
+    promedio_segundos = serializers.FloatField()
+    promedio_horas = serializers.FloatField()
+    promedio_dias = serializers.FloatField()
+    muestras = serializers.IntegerField()
+
+class TTATotalSerializer(serializers.Serializer):
+    tta_segundos = serializers.FloatField()
+    tta_horas = serializers.FloatField()
+    tta_dias = serializers.FloatField()
+    estados_sumados = serializers.IntegerField()

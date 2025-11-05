@@ -19,7 +19,8 @@ from .serializers import (
     AverageResolutionTimeSerializer,
     StateDistributionItemSerializer,
     StateDistributionResponseSerializer,
-    TicketAgingItemSerializer
+    TicketAgingItemSerializer,
+    WeekdayResolutionCountSerializer
 )
 
 User = get_user_model()
@@ -486,4 +487,74 @@ class TicketAgingTopView(APIView):
             })
 
         ser = TicketAgingItemSerializer(items, many=True)
+        return Response(ser.data, status=status.HTTP_200_OK)
+
+class ResolutionsByWeekdayView(APIView):
+    permission_classes = [IsAdmin]
+    FINAL_STATE_ID = 5
+
+    def get(self, request):
+        from django.db.models.functions import ExtractWeekDay
+        from django.db.models import Count, Q
+
+        # 1) Cambios aprobados hacia estado final (source principal)
+        agg_scr = (
+            StateChangeRequest.objects
+            .filter(
+                to_state_id=self.FINAL_STATE_ID,
+                status=StateChangeRequest.Status.APPROVED,
+                approved_at__isnull=False,            # ⬅️ evita weekday None
+            )
+            .annotate(weekday=ExtractWeekDay('approved_at'))
+            .values('weekday')
+            .annotate(total=Count('id'))
+        )
+        counts_scr = {row['weekday']: row['total'] for row in agg_scr if row['weekday'] is not None}
+
+        # 2) Tickets en estado final SIN aprobación registrada → respaldo: actualizado_en
+        agg_fallback = (
+            Ticket.objects
+            .filter(
+                estado_id=self.FINAL_STATE_ID,
+                actualizado_en__isnull=False          # ⬅️ evita weekday None
+            )
+            .exclude(
+                state_requests__to_state_id=self.FINAL_STATE_ID,
+                state_requests__status=StateChangeRequest.Status.APPROVED,
+                state_requests__approved_at__isnull=False
+            )
+            .annotate(weekday=ExtractWeekDay('actualizado_en'))
+            .values('weekday')
+            .annotate(total=Count('id'))
+        )
+        counts_fb = {row['weekday']: row['total'] for row in agg_fallback if row['weekday'] is not None}
+
+        # 3) Sumar ambos orígenes y mapear a Lun..Dom
+        def to_lun_dom_index(wd):
+            # Guard: si viene None, no mapeamos
+            if wd is None:
+                return None
+            # ExtractWeekDay: 1=Dom, 2=Lun, ..., 7=Sáb → 0..6 (Lun..Dom)
+            return (wd - 2) % 7
+
+        totals_by_idx = [0]*7  # 0=Lun ... 6=Dom
+        for k, v in counts_scr.items():
+            idx = to_lun_dom_index(k)
+            if idx is not None:
+                totals_by_idx[idx] += v
+        for k, v in counts_fb.items():
+            idx = to_lun_dom_index(k)
+            if idx is not None:
+                totals_by_idx[idx] += v
+
+        payload = {
+            'lunes':      int(totals_by_idx[0]),
+            'martes':     int(totals_by_idx[1]),
+            'miercoles':  int(totals_by_idx[2]),
+            'jueves':     int(totals_by_idx[3]),
+            'viernes':    int(totals_by_idx[4]),
+            'sabado':     int(totals_by_idx[5]),
+            'domingo':    int(totals_by_idx[6]),
+        }
+        ser = WeekdayResolutionCountSerializer(payload)
         return Response(ser.data, status=status.HTTP_200_OK)

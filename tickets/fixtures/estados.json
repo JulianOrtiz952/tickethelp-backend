@@ -47,7 +47,8 @@
       "nombre": "Cancelado",
       "es_activo": false,
       "es_final": true
-    },
+    }
+  },
   {
   "model": "tickets.estado",
   "pk": 6,

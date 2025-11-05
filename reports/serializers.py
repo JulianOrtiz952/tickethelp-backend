@@ -62,3 +62,31 @@ class AverageResolutionTimeSerializer(serializers.Serializer):
     promedio_horas = serializers.FloatField()
     promedio_dias = serializers.FloatField()
     tickets_contemplados = serializers.IntegerField()
+
+
+class TechnicianTTRSerializer(serializers.Serializer):
+    """
+    Serializer para TTR promedio de un técnico individual.
+    """
+    tecnico_id = serializers.IntegerField()
+    nombre_completo = serializers.CharField()
+    promedio_horas = serializers.FloatField()
+    promedio_dias = serializers.FloatField()
+    tickets_contemplados = serializers.IntegerField()
+
+
+class GlobalTTRSerializer(serializers.Serializer):
+    """
+    Serializer para TTR promedio global.
+    """
+    promedio_horas = serializers.FloatField()
+    promedio_dias = serializers.FloatField()
+    tickets_contemplados = serializers.IntegerField()
+
+
+class TTRPromedioSerializer(serializers.Serializer):
+    """
+    Serializer para TTR promedio global y por técnico.
+    """
+    promedio_global = GlobalTTRSerializer(help_text="TTR promedio global")
+    por_tecnico = TechnicianTTRSerializer(many=True, help_text="Lista de TTR promedio por cada técnico")

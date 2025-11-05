@@ -16,7 +16,8 @@ from .serializers import (
     TechnicianPerformanceSerializer,
     ActiveClientsEvolutionSerializer,
     ActivityHeatmapSerializer,
-    AverageResolutionTimeSerializer
+    AverageResolutionTimeSerializer,
+    TTRPromedioSerializer
 )
 
 User = get_user_model()
@@ -97,10 +98,6 @@ class TechnicianPerformanceRankingView(APIView):
             for x in rows[:LIMIT]
         ]
         return Response(payload, status=status.HTTP_200_OK)
-
-
-
-
 
 class ActiveClientsEvolutionView(APIView):
     """
@@ -313,3 +310,115 @@ class AverageResolutionTimeView(APIView):
         }
         ser = AverageResolutionTimeSerializer(payload)
         return Response(ser.data, status=status.HTTP_200_OK)
+
+
+class TTRPromedioView(APIView):
+    """
+    Tiempo Total de Resolución (TTR) promedio:
+    - Calcula el TTR promedio global del sistema
+    - Calcula el TTR promedio por cada técnico
+    - TTR = tiempo desde creación del ticket hasta cierre (estado final)
+    - resolved_at = primera aprobación (approved_at) hacia estado 5.
+      Si no hay, se toma actualizado_en como respaldo.
+    
+    Optimizado: Una sola consulta para calcular TTR global y por técnico.
+    """
+    permission_classes = [IsAdmin]
+
+    FINAL_STATE_ID = 5  # estado "finalizado"
+
+    def get(self, request):
+        # Subquery reutilizable: primer approved_at hacia el estado final
+        first_approved_subq = (
+            StateChangeRequest.objects
+            .filter(
+                ticket=OuterRef('pk'),
+                to_state_id=self.FINAL_STATE_ID,
+                status=StateChangeRequest.Status.APPROVED,
+            )
+            .order_by('approved_at')
+            .values('approved_at')[:1]
+        )
+
+        # Base queryset: tickets finalizados con duración calculada
+        base_qs = (
+            Ticket.objects
+            .filter(estado_id=self.FINAL_STATE_ID)
+            .select_related('tecnico')
+            .annotate(
+                resolved_at=Subquery(first_approved_subq),
+                resolved_at_final=Coalesce(F('resolved_at'), F('actualizado_en')),
+                duration=ExpressionWrapper(
+                    F('resolved_at_final') - F('creado_en'),
+                    output_field=DurationField()
+                )
+            )
+        )
+
+        # === CALCULAR TTR GLOBAL ===
+        agg_global = base_qs.aggregate(
+            avg_duration=Avg('duration'),
+            total=Count('id')
+        )
+
+        avg_duration_global = agg_global['avg_duration']
+        total_global = agg_global['total'] or 0
+
+        if avg_duration_global and total_global > 0:
+            avg_seconds_global = avg_duration_global.total_seconds()
+            promedio_global = {
+                'promedio_horas': round(avg_seconds_global / 3600.0, 2),
+                'promedio_dias': round(avg_seconds_global / 86400.0, 2),
+                'tickets_contemplados': total_global
+            }
+        else:
+            promedio_global = {
+                'promedio_horas': 0.0,
+                'promedio_dias': 0.0,
+                'tickets_contemplados': 0
+            }
+
+        # === CALCULAR TTR POR TÉCNICO (en una sola consulta agregada) ===
+        # Agregar por técnico: solo técnicos con tickets finalizados
+        tecnicos_agg = (
+            base_qs
+            .filter(tecnico__isnull=False)
+            .values('tecnico_id', 'tecnico__first_name', 'tecnico__last_name', 'tecnico__email')
+            .annotate(
+                avg_duration=Avg('duration'),
+                total=Count('id')
+            )
+            .filter(total__gt=0)  # Solo técnicos con tickets
+        )
+
+        por_tecnico_list = []
+        for row in tecnicos_agg:
+            avg_duration_tec = row['avg_duration']
+            if avg_duration_tec:
+                avg_seconds_tec = avg_duration_tec.total_seconds()
+                
+                # Construir nombre completo
+                first_name = (row['tecnico__first_name'] or '').strip()
+                last_name = (row['tecnico__last_name'] or '').strip()
+                nombre_completo = f"{first_name} {last_name}".strip()
+                if not nombre_completo:
+                    nombre_completo = row['tecnico__email'] or f"Usuario {row['tecnico_id']}"
+
+                por_tecnico_list.append({
+                    'tecnico_id': row['tecnico_id'],
+                    'nombre_completo': nombre_completo,
+                    'promedio_horas': round(avg_seconds_tec / 3600.0, 2),
+                    'promedio_dias': round(avg_seconds_tec / 86400.0, 2),
+                    'tickets_contemplados': row['total']
+                })
+
+        # Ordenar por TTR promedio (menor tiempo primero = mejor rendimiento)
+        por_tecnico_list.sort(key=lambda x: x['promedio_horas'])
+
+        payload = {
+            'promedio_global': promedio_global,
+            'por_tecnico': por_tecnico_list
+        }
+
+        serializer = TTRPromedioSerializer(payload)
+        return Response(serializer.data, status=status.HTTP_200_OK)

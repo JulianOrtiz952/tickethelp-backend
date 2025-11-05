@@ -416,23 +416,6 @@ class NotificationService:
                 estado=Notification.Estado.ENVIADA,
                 fecha_envio=timezone.now()
             )
-            try:
-                notif = Notification.objects.filter(ticket=ticket, tipo=tipo_notificacion, titulo=titulo).order_by('-fecha_creacion').first()
-                if notif:
-                    destinatarios = []
-                    if tipo_notificacion.enviar_a_cliente and ticket.cliente:
-                        destinatarios.append(ticket.cliente)
-                    if tipo_notificacion.enviar_a_tecnico and ticket.tecnico:
-                        destinatarios.append(ticket.tecnico)
-                    if tipo_notificacion.enviar_a_admin and ticket.administrador:
-                        destinatarios.append(ticket.administrador)
-                    if usuario and usuario not in destinatarios:
-                        destinatarios.append(usuario)
-
-                    if destinatarios:
-                        notif.destinatarios.set([u for u in destinatarios if u])
-            except Exception as e:
-                logger.error(f"Error asignando destinatarios M2M en notificación: {e}")
             
         except Exception as e:
             logger.error(f"Error creando notificación interna: {e}")

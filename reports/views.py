@@ -123,7 +123,7 @@ class ActiveClientsEvolutionView(APIView):
         fin_anio = inicio_anio_siguiente - timedelta(seconds=1)
 
         qs_anual = Ticket.objects.filter(
-            estado__codigo='open',
+            estado_id=1,  # 1=open
             creado_en__gte=inicio_anio,
             creado_en__lte=fin_anio,
             cliente__isnull=False,

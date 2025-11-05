@@ -647,75 +647,45 @@ class TicketAgingTopView(APIView):
         return Response(ser.data, status=status.HTTP_200_OK)
 
 
-class ResolutionsByWeekdayView(APIView):
-    permission_classes = [IsAdmin]
-    FINAL_STATE_ID = 5
+class WeekdayResolutionCountView(APIView):
+    """
+    Devuelve {lunes..domingo} contando tickets CERRADOS por día de la semana.
+    Fuente de fecha:
+      - finalizado_en (si existe el campo)
+      - si no existe, actualizado_en
+    """
+    def get(self, request, *args, **kwargs):
+        # 1) Campo base (cierre real)
+        FIELD = 'finalizado_en' if hasattr(Ticket, 'finalizado_en') else 'actualizado_en'
 
-    def get(self, request):
-        from django.db.models.functions import ExtractWeekDay
-        from django.db.models import Count, Q
+        qs = Ticket.objects.filter(estado__es_final=True)
 
-        # 1) Cambios aprobados hacia estado final (source principal)
-        agg_scr = (
-            StateChangeRequest.objects
-            .filter(
-                to_state_id=self.FINAL_STATE_ID,
-                status=StateChangeRequest.Status.APPROVED,
-                approved_at__isnull=False,            # ⬅️ evita weekday None
-            )
-            .annotate(weekday=ExtractWeekDay('approved_at'))
-            .values('weekday')
+        date_from = request.query_params.get('from')
+        date_to   = request.query_params.get('to')
+        if date_from:
+          qs = qs.filter(**{f"{FIELD}__date__gte": date_from})
+        if date_to:
+            qs = qs.filter(**{f"{FIELD}__date__lte": date_to})
+
+        # 1=domingo, 2=lunes, ... 7=sábado
+        raw = (
+            qs.annotate(dow=ExtractWeekDay(FIELD))
+            .values('dow')
             .annotate(total=Count('id'))
+            .order_by('dow')
         )
-        counts_scr = {row['weekday']: row['total'] for row in agg_scr if row['weekday'] is not None}
 
-        # 2) Tickets en estado final SIN aprobación registrada → respaldo: actualizado_en
-        agg_fallback = (
-            Ticket.objects
-            .filter(
-                estado_id=self.FINAL_STATE_ID,
-                actualizado_en__isnull=False          # ⬅️ evita weekday None
-            )
-            .exclude(
-                state_requests__to_state_id=self.FINAL_STATE_ID,
-                state_requests__status=StateChangeRequest.Status.APPROVED,
-                state_requests__approved_at__isnull=False
-            )
-            .annotate(weekday=ExtractWeekDay('actualizado_en'))
-            .values('weekday')
-            .annotate(total=Count('id'))
-        )
-        counts_fb = {row['weekday']: row['total'] for row in agg_fallback if row['weekday'] is not None}
+        # Queremos claves lunes..domingo
+        map_num_a_nombre = {2:"lunes", 3:"martes", 4:"miercoles", 5:"jueves", 6:"viernes", 7:"sabado", 1:"domingo"}
+        data = {k: 0 for k in ["lunes","martes","miercoles","jueves","viernes","sabado","domingo"]}
+        for r in raw:
+           nombre = map_num_a_nombre.get(r["dow"])
+           if nombre:
+            data[nombre] = r["total"]
 
-        # 3) Sumar ambos orígenes y mapear a Lun..Dom
-        def to_lun_dom_index(wd):
-            # Guard: si viene None, no mapeamos
-            if wd is None:
-                return None
-            # ExtractWeekDay: 1=Dom, 2=Lun, ..., 7=Sáb → 0..6 (Lun..Dom)
-            return (wd - 2) % 7
-
-        totals_by_idx = [0]*7  # 0=Lun ... 6=Dom
-        for k, v in counts_scr.items():
-            idx = to_lun_dom_index(k)
-            if idx is not None:
-                totals_by_idx[idx] += v
-        for k, v in counts_fb.items():
-            idx = to_lun_dom_index(k)
-            if idx is not None:
-                totals_by_idx[idx] += v
-
-        payload = {
-            'lunes':      int(totals_by_idx[0]),
-            'martes':     int(totals_by_idx[1]),
-            'miercoles':  int(totals_by_idx[2]),
-            'jueves':     int(totals_by_idx[3]),
-            'viernes':    int(totals_by_idx[4]),
-            'sabado':     int(totals_by_idx[5]),
-            'domingo':    int(totals_by_idx[6]),
-        }
-        ser = WeekdayResolutionCountSerializer(payload)
-        return Response(ser.data, status=status.HTTP_200_OK)
+            ser = WeekdayResolutionCountSerializer(data=data)
+            ser.is_valid(raise_exception=True)
+            return Response(ser.data, status=status.HTTP_200_OK)
 
 def _compute_state_durations():
     """

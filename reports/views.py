@@ -49,85 +49,54 @@ class GeneralStatsView(APIView):
 
 
 class TechnicianPerformanceRankingView(APIView):
+    """
+    Ranking de desempeño (histórico):
+    - tickets_asignados: total histórico por técnico.
+    - tickets_resueltos: total histórico en estado_id=5 por técnico.
+    - porcentaje_exito: resueltos/asignados * 100.
+    - Top 5: primero por resueltos DESC, luego asignados DESC.
+    """
     permission_classes = [IsAdmin]
 
     def get(self, request):
-        from datetime import timedelta
-        from django.utils import timezone
         from django.db.models import Count, Q
 
         FINAL_STATE_ID = 5
-        LIMIT = 5
+        LIMIT = int(request.query_params.get('limit', 5))
 
-        # Rango del mes anterior
-        hoy = timezone.now()
-        inicio_mes_actual = hoy.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-        if inicio_mes_actual.month == 1:
-            inicio_mes_anterior = inicio_mes_actual.replace(year=inicio_mes_actual.year - 1, month=12, day=1)
-        else:
-            inicio_mes_anterior = inicio_mes_actual.replace(month=inicio_mes_actual.month - 1, day=1)
-        fin_mes_anterior = inicio_mes_actual - timedelta(seconds=1)
-
-        # Agregados por técnico SOLO del mes anterior
-        agg_mes = (
-            Ticket.objects.filter(
-                tecnico__role=User.Role.TECH,
-                tecnico__is_active=True,
-                creado_en__gte=inicio_mes_anterior,
-                creado_en__lte=fin_mes_anterior
-            )
-            .values('tecnico', 'tecnico__first_name', 'tecnico__last_name', 'tecnico__email')
+        # Tomamos TODOS los técnicos activos
+        qs = (
+            User.objects.filter(role=User.Role.TECH, is_active=True)
             .annotate(
-                tickets_asignados=Count('id'),
-                tickets_resueltos=Count('id', filter=Q(estado_id=FINAL_STATE_ID)),
+                tickets_asignados=Count('tickets_asignados', distinct=True),
+                tickets_resueltos=Count(
+                    'tickets_asignados',
+                    filter=Q(tickets_asignados__estado_id=FINAL_STATE_ID),
+                    distinct=True
+                ),
             )
         )
 
-        # Normalización
+        # Normalizamos y calculamos % éxito
         rows = []
-        for r in agg_mes:
-            asign = r['tickets_asignados'] or 0
-            res = r['tickets_resueltos'] or 0
-            pct = round((res / asign) * 100.0, 2) if asign > 0 else 0.0
-            nombre = f"{(r['tecnico__first_name'] or '').strip()} {(r['tecnico__last_name'] or '').strip()}".strip() or (r.get('tecnico__email') or '')
+        for u in qs:
+            asign = u.tickets_asignados or 0
+            res   = u.tickets_resueltos or 0
+            pct   = round((res / asign) * 100.0, 2) if asign > 0 else 0.0
+            nombre = f"{(u.first_name or '').strip()} {(u.last_name or '').strip()}".strip() or (u.email or '')
             rows.append({
-                'tecnico_id': r['tecnico'],
+                'tecnico_id': u.pk,
                 'nombre_completo': nombre,
                 'tickets_asignados': asign,
                 'tickets_resueltos': res,
                 'porcentaje_exito': pct,
             })
 
-        # 1) Bloque principal: con resueltos > 0
-        resolvieron = [x for x in rows if x['tickets_resueltos'] > 0]
-        resolvieron.sort(key=lambda x: (x['tickets_resueltos'], x['tickets_asignados']), reverse=True)
+        # Orden: más resueltos, luego más asignados
+        rows.sort(key=lambda x: (x['tickets_resueltos'], x['tickets_asignados']), reverse=True)
 
-        # 2) Relleno interno: con asignados > 0 pero resueltos = 0 (si todavía faltan)
-        usados = {x['tecnico_id'] for x in resolvieron}
-        con_asignados = [x for x in rows if x['tecnico_id'] not in usados]
-        con_asignados.sort(key=lambda x: (x['tickets_asignados'], x['tickets_resueltos']), reverse=True)
-
-        top = (resolvieron + con_asignados)[:LIMIT]
-        faltan = LIMIT - len(top)
-
-        if faltan > 0:
-            # 3) Relleno final: técnicos activos SIN actividad ese mes, ordenados por histórico
-            faltantes = (
-                User.objects.filter(role=User.Role.TECH, is_active=True)
-                .exclude(pk__in=[x['tecnico_id'] for x in top])
-                .annotate(total_asignados_hist=Count('tickets_asignados'))  # histórico
-                .order_by('-total_asignados_hist', 'last_name', 'first_name')[:faltan]
-            )
-
-            for t in faltantes:
-                nombre = f"{(t.first_name or '').strip()} {(t.last_name or '').strip()}".strip() or (t.email or '')
-                top.append({
-                    'tecnico_id': t.pk,
-                    'nombre_completo': nombre,
-                    'tickets_asignados': 0,
-                    'tickets_resueltos': 0,
-                    'porcentaje_exito': 0.0,
-                })
+        # Asegura máximo LIMIT
+        top = rows[:LIMIT]
 
         # Formato final
         payload = [
@@ -135,11 +104,12 @@ class TechnicianPerformanceRankingView(APIView):
                 "nombre_completo": x['nombre_completo'],
                 "tickets_asignados": x['tickets_asignados'],
                 "tickets_resueltos": x['tickets_resueltos'],
-                "porcentaje_exito": round(x['porcentaje_exito'], 2),
+                "porcentaje_exito": x['porcentaje_exito'],
             }
-            for x in top[:LIMIT]
+            for x in top
         ]
         return Response(payload, status=status.HTTP_200_OK)
+
 
 
 

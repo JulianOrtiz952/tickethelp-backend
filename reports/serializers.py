@@ -90,3 +90,13 @@ class TicketAgingItemSerializer(serializers.Serializer):
     cliente_id = serializers.CharField(allow_null=True, required=False)
     cliente_nombre = serializers.CharField(allow_null=True, required=False)
     cliente_email = serializers.EmailField(allow_null=True, required=False)
+
+class WeekdayResolutionCountSerializer(serializers.Serializer):
+    lunes = serializers.IntegerField()
+    martes = serializers.IntegerField()
+    miercoles = serializers.IntegerField()
+    jueves = serializers.IntegerField()
+    viernes = serializers.IntegerField()
+    sabado = serializers.IntegerField()
+    domingo = serializers.IntegerField()
+

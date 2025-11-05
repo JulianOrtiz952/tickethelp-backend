@@ -160,7 +160,7 @@ class AdminUpdateUserSerializer (serializers.ModelSerializer):
         model = User
         fields = ['document','email','number','role','is_active','first_name','last_name']
         extra_kwargs = {
-            'document': {'required': True, 'allow_blank': False, 'max_length': 20},
+            'document': {'required': False},  # Opcional: solo si se quiere cambiar
             'email': {'required': True, 'allow_blank': False, 'max_length': 254},
             'role': {'required': True},
             'is_active': {'required': True},
@@ -168,6 +168,120 @@ class AdminUpdateUserSerializer (serializers.ModelSerializer):
             'last_name': {'required': True, 'allow_blank': False, 'max_length': 150},
             'number': {'required': True, 'allow_blank': False, 'max_length': 10},
         }
+    
+    def validate(self, attrs):
+        """
+        Valida que email, document y number sean únicos excluyendo al usuario actual.
+        Maneja el cambio de document (PK) de manera especial.
+        """
+        # Obtener la instancia del usuario que se está actualizando
+        instance = self.instance
+        
+        if not instance:
+            raise serializers.ValidationError("No se puede actualizar: usuario no encontrado.")
+        
+        email = attrs.get('email')
+        document = attrs.get('document')
+        number = attrs.get('number')
+        
+        # Validar email único (excluyendo el usuario actual)
+        if email:
+            email_exists = User.objects.filter(email=email).exclude(pk=instance.pk)
+            if email_exists.exists():
+                raise serializers.ValidationError({
+                    'email': f"El correo '{email}' ya está registrado."
+                })
+        
+        # Validar document único (excluyendo el usuario actual) - solo si se quiere cambiar
+        if document and document != instance.document:
+            document_exists = User.objects.filter(document=document).exclude(pk=instance.pk)
+            if document_exists.exists():
+                raise serializers.ValidationError({
+                    'document': f"El documento '{document}' ya está registrado."
+                })
+        
+        # Validar number único (excluyendo el usuario actual)
+        if number:
+            number_exists = User.objects.filter(number=number).exclude(pk=instance.pk)
+            if number_exists.exists():
+                raise serializers.ValidationError({
+                    'number': f"El número telefónico '{number}' ya está registrado."
+                })
+        
+        return attrs
+    
+    def save(self, **kwargs):
+        """
+        Guarda el usuario actualizando el PK si es necesario.
+        Si se cambia el document (PK), se crea un nuevo usuario y se actualizan todas las referencias.
+        """
+        from django.db import transaction
+        
+        instance = self.instance
+        validated_data = self.validated_data.copy()
+        
+        # Si se quiere cambiar el document (PK)
+        new_document = validated_data.get('document')
+        if new_document and new_document != instance.document:
+            old_document = instance.document
+            
+            # Usar transacción para asegurar atomicidad
+            with transaction.atomic():
+                # Crear nuevo usuario con el nuevo document y todos los datos actualizados
+                new_user = User(
+                    document=new_document,
+                    email=validated_data.get('email', instance.email),
+                    number=validated_data.get('number', instance.number),
+                    role=validated_data.get('role', instance.role),
+                    is_active=validated_data.get('is_active', instance.is_active),
+                    first_name=validated_data.get('first_name', instance.first_name),
+                    last_name=validated_data.get('last_name', instance.last_name),
+                    password=instance.password,  # Mantener la contraseña actual
+                    is_staff=instance.is_staff,
+                    is_superuser=instance.is_superuser,
+                    date_joined=instance.date_joined,  # Mantener fecha original
+                    last_login=instance.last_login,
+                    must_change_password=instance.must_change_password,
+                    profile_picture=instance.profile_picture,
+                )
+                
+                # Guardar el nuevo usuario
+                new_user.save()
+                
+                # Actualizar referencias en Ticket (técnico, cliente, administrador)
+                from tickets.models import Ticket
+                Ticket.objects.filter(tecnico_id=old_document).update(tecnico=new_user)
+                Ticket.objects.filter(cliente_id=old_document).update(cliente=new_user)
+                Ticket.objects.filter(administrador_id=old_document).update(administrador=new_user)
+                
+                # Actualizar referencias en StateChangeRequest
+                from tickets.models import StateChangeRequest
+                StateChangeRequest.objects.filter(requested_by_id=old_document).update(requested_by=new_user)
+                StateChangeRequest.objects.filter(approved_by_id=old_document).update(approved_by=new_user)
+                
+                # Actualizar referencias en Notification
+                from notifications.models import Notification
+                Notification.objects.filter(usuario_id=old_document).update(usuario=new_user)
+                Notification.objects.filter(enviado_por_id=old_document).update(enviado_por=new_user)
+                
+                # Actualizar ManyToMany en Notification (destinatarios)
+                # Obtener todas las notificaciones que tienen al usuario antiguo como destinatario
+                notifications_with_user = Notification.objects.filter(destinatarios=old_document)
+                for notification in notifications_with_user:
+                    notification.destinatarios.remove(instance)
+                    notification.destinatarios.add(new_user)
+                
+                # Eliminar el usuario antiguo
+                instance.delete()
+                
+                # Actualizar self.instance para que el serializer retorne el nuevo usuario
+                self.instance = new_user
+                
+                # Retornar el nuevo usuario
+                return new_user
+        else:
+            # Si no se cambia el document, actualización normal
+            return super().save(**kwargs)
         
     def validate_number(self, value):
         if not value:

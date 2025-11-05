@@ -49,13 +49,6 @@ class GeneralStatsView(APIView):
 
 
 class TechnicianPerformanceRankingView(APIView):
-    """
-    Ranking de desempeño (histórico):
-    - tickets_asignados: total histórico por técnico.
-    - tickets_resueltos: total histórico en estado_id=5 por técnico.
-    - porcentaje_exito: resueltos/asignados * 100.
-    - Top 5: primero por resueltos DESC, luego asignados DESC.
-    """
     permission_classes = [IsAdmin]
 
     def get(self, request):
@@ -64,12 +57,12 @@ class TechnicianPerformanceRankingView(APIView):
         FINAL_STATE_ID = 5
         LIMIT = int(request.query_params.get('limit', 5))
 
-        # Tomamos TODOS los técnicos activos
+        # Técnicos activos con agregados HISTÓRICOS
         qs = (
             User.objects.filter(role=User.Role.TECH, is_active=True)
             .annotate(
-                tickets_asignados=Count('tickets_asignados', distinct=True),
-                tickets_resueltos=Count(
+                total_asignados=Count('tickets_asignados', distinct=True),
+                total_resueltos=Count(
                     'tickets_asignados',
                     filter=Q(tickets_asignados__estado_id=FINAL_STATE_ID),
                     distinct=True
@@ -77,28 +70,23 @@ class TechnicianPerformanceRankingView(APIView):
             )
         )
 
-        # Normalizamos y calculamos % éxito
         rows = []
         for u in qs:
-            asign = u.tickets_asignados or 0
-            res   = u.tickets_resueltos or 0
+            asign = u.total_asignados or 0
+            res   = u.total_resueltos or 0
             pct   = round((res / asign) * 100.0, 2) if asign > 0 else 0.0
             nombre = f"{(u.first_name or '').strip()} {(u.last_name or '').strip()}".strip() or (u.email or '')
             rows.append({
                 'tecnico_id': u.pk,
                 'nombre_completo': nombre,
-                'tickets_asignados': asign,
-                'tickets_resueltos': res,
+                'tickets_asignados': asign,   # ← lo que pides: TODOS los asignados
+                'tickets_resueltos': res,     # ← resueltos en estado 5
                 'porcentaje_exito': pct,
             })
 
         # Orden: más resueltos, luego más asignados
         rows.sort(key=lambda x: (x['tickets_resueltos'], x['tickets_asignados']), reverse=True)
 
-        # Asegura máximo LIMIT
-        top = rows[:LIMIT]
-
-        # Formato final
         payload = [
             {
                 "nombre_completo": x['nombre_completo'],
@@ -106,9 +94,10 @@ class TechnicianPerformanceRankingView(APIView):
                 "tickets_resueltos": x['tickets_resueltos'],
                 "porcentaje_exito": x['porcentaje_exito'],
             }
-            for x in top
+            for x in rows[:LIMIT]
         ]
         return Response(payload, status=status.HTTP_200_OK)
+
 
 
 

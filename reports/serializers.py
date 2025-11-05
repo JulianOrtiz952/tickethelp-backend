@@ -90,3 +90,16 @@ class TTRPromedioSerializer(serializers.Serializer):
     """
     promedio_global = GlobalTTRSerializer(help_text="TTR promedio global")
     por_tecnico = TechnicianTTRSerializer(many=True, help_text="Lista de TTR promedio por cada técnico")
+
+class FlowFunnelItemSerializer(serializers.Serializer):
+    codigo = serializers.CharField()
+    nombre = serializers.CharField()
+    porcentaje = serializers.FloatField(help_text="Porcentaje respecto al total de tickets creados")
+
+
+class FlowFunnelSerializer(serializers.Serializer):
+    """
+    Embudo de flujo: porcentajes por estados intermedios (excluye 'open' y finales).
+    items: lista ordenada según flujo del proceso.
+    """
+    items = FlowFunnelItemSerializer(many=True)

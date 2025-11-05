@@ -119,73 +119,79 @@ class ActiveTechniciansAV(ListAPIView):
 class StateChangeAV(UpdateAPIView):
     permission_classes = [IsTechnician]
     serializer_class = StateChangeSerializer
-    
+
     def get_object(self):
         ticket_id = self.kwargs.get('ticket_id')
         return get_object_or_404(Ticket, pk=ticket_id)
-    
+
     def put(self, request, *args, **kwargs):
         ticket = self.get_object()
-        
-        # Obtener usuario desde parámetros de consulta o request.user
-        user_document = request.query_params.get('user_document')
-        if user_document:
-            try:
-                user = User.objects.get(document=user_document)
-            except User.DoesNotExist:
-                return Response({
-                    'error': 'Usuario no encontrado',
-                    'message': 'El documento de usuario proporcionado no existe'
-                }, status=status.HTTP_400_BAD_REQUEST)
-        else:
-            user = getattr(request, 'user', None)
-            if not user or not user.is_authenticated:
-                return Response({
-                    'error': 'Usuario requerido',
-                    'message': 'Debe proporcionar user_document como parámetro de consulta'
-                }, status=status.HTTP_400_BAD_REQUEST)
-        
+
+        # Validar que esté autenticado y sea técnico
+        if not user.is_authenticated or user.role != User.Role.TECH:
+            return Response({
+                'error': 'No autorizado',
+                'message': 'Debe iniciar sesión como técnico para cambiar el estado de un ticket.'
+            }, status=status.HTTP_403_FORBIDDEN)
+
+        # Validar que el usuario sea el técnico asignado
         if ticket.tecnico != user:
             return Response({
                 'error': 'No autorizado',
-                'message': 'Solo el técnico asignado puede solicitar cambios de estado'
+                'message': 'Solo el técnico asignado puede solicitar cambios de estado.'
             }, status=status.HTTP_403_FORBIDDEN)
-        
+
+        # Bloquear si ya está finalizado
+        if ticket.estado.es_final:
+            return Response({
+                'error': 'No permitido',
+                'message': 'El ticket ya está finalizado y no puede modificarse.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Bloquear si está en pruebas
+        if ticket.estado.codigo == "testing":
+            return Response({
+                'error': 'No permitido',
+                'message': 'El ticket está en pruebas y no puede ser modificado por el técnico.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Validar datos enviados
         serializer = self.get_serializer(data=request.data, context={'ticket': ticket})
-        
-        if serializer.is_valid():
-            to_state = serializer.validated_data['to_state']
-            reason = serializer.validated_data.get('reason', '')
-            
-            if to_state.es_final:
-                state_request = StateChangeRequest.objects.create(
-                    ticket=ticket,
-                    requested_by=user,
-                    from_state=ticket.estado,
-                    to_state=to_state,
-                    reason=reason
-                )
-                
-                # Enviar notificación al administrador
-                NotificationService.enviar_solicitud_cambio_estado(state_request)
-                
-                return Response({
-                    'message': 'El estado final requiere validación del administrador, solicitud enviada correctamente',
-                    'request_id': state_request.id,
-                    'status': 'pending_approval',
-                    'to_state': to_state.nombre
-                }, status=status.HTTP_202_ACCEPTED)
-            else:
-                ticket.estado = to_state
-                ticket.save()
-                
-                return Response({
-                    'message': 'Estado actualizado correctamente',
-                    'ticket_id': ticket.pk,
-                    'new_state': to_state.nombre
-                }, status=status.HTTP_200_OK)
-        
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        to_state = serializer.validated_data['to_state']
+        reason = serializer.validated_data.get('reason', '')
+
+        # Estado final requiere aprobación
+        if to_state.es_final:
+            state_request = StateChangeRequest.objects.create(
+                ticket=ticket,
+                requested_by=user,
+                from_state=ticket.estado,
+                to_state=to_state,
+                reason=reason
+            )
+
+            # Notificar al administrador
+            NotificationService.enviar_solicitud_cambio_estado(state_request)
+
+            return Response({
+                'message': 'El estado final requiere validación del administrador, solicitud enviada correctamente.',
+                'request_id': state_request.id,
+                'status': 'pending_approval',
+                'to_state': to_state.nombre
+            }, status=status.HTTP_202_ACCEPTED)
+
+        ticket.estado = to_state
+        ticket.save()
+
+        return Response({
+            'message': 'Estado actualizado correctamente.',
+            'ticket_id': ticket.pk,
+            'new_state': to_state.nombre
+        }, status=status.HTTP_200_OK)
+
 
 
 class StateApprovalAV(UpdateAPIView):

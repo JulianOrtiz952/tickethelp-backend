@@ -426,30 +426,48 @@ class StateDistributionView(APIView):
 
 class TicketAgingTopView(APIView):
     """
-    Top 10 tickets con más tiempo abiertos (no finalizados).
+    Top N tickets con más tiempo abiertos (no finalizados).
     - Métrica: Now() - creado_en (duración).
     - Excluye estado_id = 10 (finalizado).
-    - Empates: por ID menor.
+    - Desempate: ID menor.
+    - Incluye datos del técnico y del cliente.
     """
     permission_classes = [IsAdmin]
-    FINAL_STATE_ID = 10
-    LIMIT = 10
+    FINAL_STATE_ID = 10  # según tu requerimiento
+    DEFAULT_LIMIT = 10
 
     def get(self, request):
+        try:
+            limit = int(request.query_params.get('limit', self.DEFAULT_LIMIT))
+            if limit <= 0 or limit > 100:
+                limit = self.DEFAULT_LIMIT
+        except ValueError:
+            limit = self.DEFAULT_LIMIT
+
         qs = (
             Ticket.objects
             .exclude(estado_id=self.FINAL_STATE_ID)
             .annotate(age=ExpressionWrapper(Now() - F('creado_en'), output_field=DurationField()))
-            .select_related('estado')
-            .order_by('-age', 'id')[:self.LIMIT]
-            .values('id', 'titulo', 'creado_en', 'estado__codigo', 'estado__nombre', 'age')
+            .select_related('estado', 'tecnico', 'cliente')
+            .order_by('-age', 'id')[:limit]
+            .values(
+                'id', 'titulo', 'creado_en',
+                'estado__codigo', 'estado__nombre',
+                'age',
+                'tecnico__document', 'tecnico__first_name', 'tecnico__last_name', 'tecnico__email',
+                'cliente__document', 'cliente__first_name', 'cliente__last_name', 'cliente__email',
+            )
         )
 
-        # preparar payload con días = age.total_seconds()/86400
         items = []
         for r in qs:
             age = r['age']
             dias = round(age.total_seconds() / 86400.0, 2) if age else 0.0
+
+            # nombres legibles
+            t_nombre = f"{(r['tecnico__first_name'] or '').strip()} {(r['tecnico__last_name'] or '').strip()}".strip() or None
+            c_nombre = f"{(r['cliente__first_name'] or '').strip()} {(r['cliente__last_name'] or '').strip()}".strip() or None
+
             items.append({
                 'ticket_id': r['id'],
                 'titulo': r['titulo'],
@@ -457,6 +475,14 @@ class TicketAgingTopView(APIView):
                 'estado_nombre': r['estado__nombre'],
                 'creado_en': r['creado_en'],
                 'dias': dias,
+
+                'tecnico_id': r['tecnico__document'],
+                'tecnico_nombre': t_nombre,
+                'tecnico_email': r['tecnico__email'],
+
+                'cliente_id': r['cliente__document'],
+                'cliente_nombre': c_nombre,
+                'cliente_email': r['cliente__email'],
             })
 
         ser = TicketAgingItemSerializer(items, many=True)

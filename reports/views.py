@@ -50,11 +50,22 @@ class GeneralStatsView(APIView):
 
 class TechnicianPerformanceRankingView(APIView):
     """
-    Ranking de desempeño de técnicos basado en el mes anterior.
+    Top 5 técnicos del mes anterior:
+    1) Primero, quienes MÁS tickets resolvieron (estado_id=5).
+    2) Si hay menos de 5, se completa con quienes MÁS tickets tuvieron asignados.
+    Orden:
+      - Bloque 1 (resuelven): resueltos DESC, luego asignados DESC.
+      - Bloque 2 (relleno): asignados DESC.
     """
     permission_classes = [IsAdmin]
 
     def get(self, request):
+        from django.utils import timezone
+        from datetime import timedelta
+        from django.db.models import Count, Q
+
+        FINAL_STATE_ID = 5
+
         hoy = timezone.now()
         primer_dia_mes_actual = hoy.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
         if primer_dia_mes_actual.month == 1:
@@ -63,6 +74,7 @@ class TechnicianPerformanceRankingView(APIView):
             primer_dia_mes_anterior = primer_dia_mes_actual.replace(month=primer_dia_mes_actual.month - 1, day=1)
         ultimo_dia_mes_anterior = primer_dia_mes_actual - timedelta(seconds=1)
 
+        # Conteo por técnico SOLO del mes anterior
         tickets_mes_anterior = (
             Ticket.objects.filter(
                 tecnico__role=User.Role.TECH,
@@ -74,26 +86,50 @@ class TechnicianPerformanceRankingView(APIView):
             .values('tecnico', 'tecnico__first_name', 'tecnico__last_name', 'tecnico__email')
             .annotate(
                 tickets_asignados=Count('id'),
-                tickets_resueltos=Count('id', filter=Q(estado__codigo='closed')),
+                tickets_resueltos=Count('id', filter=Q(estado_id=FINAL_STATE_ID)),
             )
         )
 
-        ranking_data = []
-        for row in tickets_mes_anterior:
-            asignados = row['tickets_asignados'] or 0
-            resueltos = row['tickets_resueltos'] or 0
-            porcentaje = (resueltos / asignados * 100.0) if asignados > 0 else 0.0
-            nombre_completo = f"{(row['tecnico__first_name'] or '').strip()} {(row['tecnico__last_name'] or '').strip()}".strip() or (row.get('tecnico__email') or '')
-            ranking_data.append({
-                'nombre_completo': nombre_completo,
+        # Normalizamos y calculamos % éxito
+        rows = []
+        for r in tickets_mes_anterior:
+            asignados = r['tickets_asignados'] or 0
+            resueltos = r['tickets_resueltos'] or 0
+            porcentaje = round((resueltos / asignados) * 100.0, 2) if asignados > 0 else 0.0
+            nombre = f"{(r['tecnico__first_name'] or '').strip()} {(r['tecnico__last_name'] or '').strip()}".strip()
+            if not nombre:
+                nombre = r.get('tecnico__email') or ''
+            rows.append({
+                'tecnico_id': r['tecnico'],
+                'nombre_completo': nombre,
                 'tickets_asignados': asignados,
                 'tickets_resueltos': resueltos,
-                'porcentaje_exito': round(porcentaje, 2)
+                'porcentaje_exito': porcentaje,
             })
 
-        ranking_data.sort(key=lambda x: (x['porcentaje_exito'], x['tickets_resueltos']), reverse=True)
-        serializer = TechnicianPerformanceSerializer(ranking_data, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        # 1) Prioridad: los que resolvieron al menos 1
+        resolvieron = [x for x in rows if x['tickets_resueltos'] > 0]
+        resolvieron.sort(key=lambda x: (x['tickets_resueltos'], x['tickets_asignados']), reverse=True)
+
+        # 2) Relleno: los demás (aunque no hayan resuelto), por asignados DESC
+        usados = {x['tecnico_id'] for x in resolvieron}
+        relleno = [x for x in rows if x['tecnico_id'] not in usados]
+        relleno.sort(key=lambda x: (x['tickets_asignados'], x['tickets_resueltos']), reverse=True)
+
+        # Top 5 combinando
+        top = (resolvieron + relleno)[:5]
+
+        # Formato final solicitado
+        payload = [
+            {
+                "nombre_completo": x['nombre_completo'],
+                "tickets_asignados": x['tickets_asignados'],
+                "tickets_resueltos": x['tickets_resueltos'],
+                "porcentaje_exito": round(x['porcentaje_exito'], 2),
+            }
+            for x in top
+        ]
+        return Response(payload, status=status.HTTP_200_OK)
 
 
 class ActiveClientsEvolutionView(APIView):

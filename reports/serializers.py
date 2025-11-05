@@ -63,7 +63,6 @@ class AverageResolutionTimeSerializer(serializers.Serializer):
     promedio_dias = serializers.FloatField()
     tickets_contemplados = serializers.IntegerField()
 
-
 class TechnicianTTRSerializer(serializers.Serializer):
     """
     Serializer para TTR promedio de un técnico individual.
@@ -90,3 +89,40 @@ class TTRPromedioSerializer(serializers.Serializer):
     """
     promedio_global = GlobalTTRSerializer(help_text="TTR promedio global")
     por_tecnico = TechnicianTTRSerializer(many=True, help_text="Lista de TTR promedio por cada técnico")
+
+class StateDistributionItemSerializer(serializers.Serializer):
+    estado_codigo = serializers.CharField()
+    estado_nombre = serializers.CharField()
+    cantidad = serializers.IntegerField()
+    porcentaje = serializers.FloatField()
+
+class StateDistributionResponseSerializer(serializers.Serializer):
+    total = serializers.IntegerField()
+    from_date = serializers.DateField() 
+    to_date = serializers.DateField()
+    items = StateDistributionItemSerializer(many=True)
+
+class TicketAgingItemSerializer(serializers.Serializer):
+    ticket_id = serializers.IntegerField()
+    titulo = serializers.CharField()
+    estado_codigo = serializers.CharField()
+    estado_nombre = serializers.CharField()
+    creado_en = serializers.DateTimeField()
+    dias = serializers.FloatField()
+
+    tecnico_id = serializers.CharField(allow_null=True, required=False)
+    tecnico_nombre = serializers.CharField(allow_null=True, required=False)
+    tecnico_email = serializers.EmailField(allow_null=True, required=False)
+
+    cliente_id = serializers.CharField(allow_null=True, required=False)
+    cliente_nombre = serializers.CharField(allow_null=True, required=False)
+    cliente_email = serializers.EmailField(allow_null=True, required=False)
+
+class WeekdayResolutionCountSerializer(serializers.Serializer):
+    lunes = serializers.IntegerField()
+    martes = serializers.IntegerField()
+    miercoles = serializers.IntegerField()
+    jueves = serializers.IntegerField()
+    viernes = serializers.IntegerField()
+    sabado = serializers.IntegerField()
+    domingo = serializers.IntegerField()

@@ -151,6 +151,16 @@ class StateChangeAV(UpdateAPIView):
                 'message': 'Solo el técnico asignado puede solicitar cambios de estado'
             }, status=status.HTTP_403_FORBIDDEN)
         
+        # ID 5 = estado finalizado (closed)
+        FINAL_STATE_ID = 5
+        
+        # No permitir cambiar el estado de un ticket ya finalizado
+        if ticket.estado_id == FINAL_STATE_ID:
+            return Response({
+                'error': 'Ticket finalizado',
+                'message': 'No se puede cambiar el estado de un ticket finalizado.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
         serializer = self.get_serializer(data=request.data, context={'ticket': ticket})
         
         if serializer.is_valid():
@@ -231,6 +241,16 @@ class StateApprovalAV(UpdateAPIView):
                 'error': 'No autorizado',
                 'message': 'Solo los administradores pueden aprobar/rechazar solicitudes'
             }, status=status.HTTP_403_FORBIDDEN)
+        
+        # ID 5 = estado finalizado (closed)
+        FINAL_STATE_ID = 5
+        
+        # No permitir aprobar cambios de estado si el ticket ya está finalizado
+        if state_request.ticket.estado_id == FINAL_STATE_ID:
+            return Response({
+                'error': 'Ticket finalizado',
+                'message': 'No se puede aprobar un cambio de estado para un ticket finalizado. La solicitud será rechazada automáticamente.'
+            }, status=status.HTTP_400_BAD_REQUEST)
         
         serializer = self.get_serializer(data=request.data)
         

@@ -147,6 +147,16 @@ class StateChangeSerializer(serializers.Serializer):
         ticket = self.context['ticket']
         to_state = attrs['to_state']
         
+        # ID 5 = estado finalizado (closed)
+        FINAL_STATE_ID = 5
+        
+        # No permitir cambiar el estado de un ticket ya finalizado
+        if ticket.estado_id == FINAL_STATE_ID:
+            raise serializers.ValidationError({
+                "error": "No se puede cambiar el estado de un ticket finalizado.",
+                "message": "Los tickets finalizados no pueden cambiar su estado."
+            })
+        
         if ticket.estado == to_state:
             raise serializers.ValidationError({"to_state": "El ticket ya está en este estado."})
         

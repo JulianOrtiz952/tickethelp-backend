@@ -24,7 +24,7 @@ class User(AbstractUser):
         from tickets.models import Ticket
         return Ticket.objects.filter(
             models.Q(tecnico=self) | models.Q(cliente=self) | models.Q(administrador=self)
-        ).exclude(estado__codigo__in=['closed', 'canceled']).exists()
+        ).exclude(estado_id=5).exists()  # 5=closed
 
 # Maneja los managers para cada rol
 class _RoleQS(models.Manager):

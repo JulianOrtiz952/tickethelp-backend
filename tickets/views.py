@@ -157,7 +157,9 @@ class StateChangeAV(UpdateAPIView):
             to_state = serializer.validated_data['to_state']
             reason = serializer.validated_data.get('reason', '')
             
-            if to_state.es_final:
+            # Estado 4 = "En prueba" requiere aprobación del administrador
+            TRIAL_STATE_ID = 4
+            if to_state.id == TRIAL_STATE_ID or to_state.es_final:
                 state_request = StateChangeRequest.objects.create(
                     ticket=ticket,
                     requested_by=user,
@@ -169,8 +171,14 @@ class StateChangeAV(UpdateAPIView):
                 # Enviar notificación al administrador
                 NotificationService.enviar_solicitud_cambio_estado(state_request)
                 
+                message = 'El estado requiere validación del administrador, solicitud enviada correctamente'
+                if to_state.id == TRIAL_STATE_ID:
+                    message = 'El estado "En prueba" requiere validación del administrador, solicitud enviada correctamente'
+                elif to_state.es_final:
+                    message = 'El estado final requiere validación del administrador, solicitud enviada correctamente'
+                
                 return Response({
-                    'message': 'El estado final requiere validación del administrador, solicitud enviada correctamente',
+                    'message': message,
                     'request_id': state_request.id,
                     'status': 'pending_approval',
                     'to_state': to_state.nombre

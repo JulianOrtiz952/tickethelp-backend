@@ -58,8 +58,8 @@ def ticket_state_change_notification(sender, instance, **kwargs):
                            f"Emails: {resultados['emails_enviados']}, "
                            f"Internas: {resultados['notificaciones_internas']}")
                 
-                # Si el estado es "finalizado", enviar notificación especial
-                if instance.estado.codigo == 'finalizado':
+                # Si el estado es "finalizado" (id=5), enviar notificación especial
+                if instance.estado_id == 5 or instance.estado.es_final:
                     logger.info(f"Ticket #{instance.pk} marcado como finalizado")
                     resultados_finalizado = NotificationService.enviar_ticket_finalizado(instance)
                     

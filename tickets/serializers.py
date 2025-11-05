@@ -134,33 +134,36 @@ class ActiveTechnicianSerializer(serializers.ModelSerializer):
         return round(porcentaje, 2)
 
 
+# serializers.py
 class StateChangeSerializer(serializers.Serializer):
     to_state = serializers.PrimaryKeyRelatedField(queryset=Estado.objects.all(), required=True)
-    reason = serializers.CharField(max_length=500, required=False, allow_blank=True)
-
-    def validate_to_state(self, value):
-        if not value:
-            raise serializers.ValidationError("Debe seleccionar un estado de destino.")
-        return value
 
     def validate(self, attrs):
         ticket = self.context['ticket']
         to_state = attrs['to_state']
-        
-        # ID 5 = estado finalizado (closed)
-        FINAL_STATE_ID = 5
-        
-        # No permitir cambiar el estado de un ticket ya finalizado
-        if ticket.estado_id == FINAL_STATE_ID:
+
+        # Si ya está finalizado, no se puede mover
+        if getattr(ticket.estado, 'es_final', False):
             raise serializers.ValidationError({
                 "error": "No se puede cambiar el estado de un ticket finalizado.",
                 "message": "Los tickets finalizados no pueden cambiar su estado."
             })
-        
-        if ticket.estado == to_state:
-            raise serializers.ValidationError({"to_state": "El ticket ya está en este estado."})
-        
+
+        # Enforce avance secuencial exacto: solo actual+1
+        current_id = ticket.estado_id
+        next_allowed_id = (current_id or 0) + 1
+
+        if to_state.id != next_allowed_id:
+            raise serializers.ValidationError({
+                "to_state": f"Transición inválida. Solo se permite avanzar de {current_id} a {next_allowed_id}."
+            })
+
+        # (Opcional) valida que el estado esté activo si manejas 'es_activo'
+        if hasattr(to_state, 'es_activo') and not to_state.es_activo:
+            raise serializers.ValidationError({"to_state": "El estado destino no está activo."})
+
         return attrs
+
 
 
 class StateApprovalSerializer(serializers.Serializer):

@@ -82,3 +82,11 @@ class TicketAgingItemSerializer(serializers.Serializer):
     estado_nombre = serializers.CharField()
     creado_en = serializers.DateTimeField()
     dias = serializers.FloatField()
+
+    tecnico_id = serializers.CharField(allow_null=True, required=False)
+    tecnico_nombre = serializers.CharField(allow_null=True, required=False)
+    tecnico_email = serializers.EmailField(allow_null=True, required=False)
+
+    cliente_id = serializers.CharField(allow_null=True, required=False)
+    cliente_nombre = serializers.CharField(allow_null=True, required=False)
+    cliente_email = serializers.EmailField(allow_null=True, required=False)

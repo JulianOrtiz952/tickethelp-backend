@@ -49,40 +49,33 @@ class GeneralStatsView(APIView):
 
 
 class TechnicianPerformanceRankingView(APIView):
-    """
-    Top 5 técnicos del mes anterior:
-    1) Primero, quienes MÁS tickets resolvieron (estado_id=5).
-    2) Si hay menos de 5, se completa con quienes MÁS tickets tuvieron asignados.
-    Orden:
-      - Bloque 1 (resuelven): resueltos DESC, luego asignados DESC.
-      - Bloque 2 (relleno): asignados DESC.
-    """
     permission_classes = [IsAdmin]
 
     def get(self, request):
-        from django.utils import timezone
         from datetime import timedelta
+        from django.utils import timezone
         from django.db.models import Count, Q
 
         FINAL_STATE_ID = 5
+        LIMIT = 5
 
+        # Rango del mes anterior
         hoy = timezone.now()
-        primer_dia_mes_actual = hoy.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-        if primer_dia_mes_actual.month == 1:
-            primer_dia_mes_anterior = primer_dia_mes_actual.replace(year=primer_dia_mes_actual.year - 1, month=12, day=1)
+        inicio_mes_actual = hoy.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        if inicio_mes_actual.month == 1:
+            inicio_mes_anterior = inicio_mes_actual.replace(year=inicio_mes_actual.year - 1, month=12, day=1)
         else:
-            primer_dia_mes_anterior = primer_dia_mes_actual.replace(month=primer_dia_mes_actual.month - 1, day=1)
-        ultimo_dia_mes_anterior = primer_dia_mes_actual - timedelta(seconds=1)
+            inicio_mes_anterior = inicio_mes_actual.replace(month=inicio_mes_actual.month - 1, day=1)
+        fin_mes_anterior = inicio_mes_actual - timedelta(seconds=1)
 
-        # Conteo por técnico SOLO del mes anterior
-        tickets_mes_anterior = (
+        # Agregados por técnico SOLO del mes anterior
+        agg_mes = (
             Ticket.objects.filter(
                 tecnico__role=User.Role.TECH,
                 tecnico__is_active=True,
-                creado_en__gte=primer_dia_mes_anterior,
-                creado_en__lte=ultimo_dia_mes_anterior
+                creado_en__gte=inicio_mes_anterior,
+                creado_en__lte=fin_mes_anterior
             )
-            .select_related('tecnico')
             .values('tecnico', 'tecnico__first_name', 'tecnico__last_name', 'tecnico__email')
             .annotate(
                 tickets_asignados=Count('id'),
@@ -90,36 +83,53 @@ class TechnicianPerformanceRankingView(APIView):
             )
         )
 
-        # Normalizamos y calculamos % éxito
+        # Normalización
         rows = []
-        for r in tickets_mes_anterior:
-            asignados = r['tickets_asignados'] or 0
-            resueltos = r['tickets_resueltos'] or 0
-            porcentaje = round((resueltos / asignados) * 100.0, 2) if asignados > 0 else 0.0
-            nombre = f"{(r['tecnico__first_name'] or '').strip()} {(r['tecnico__last_name'] or '').strip()}".strip()
-            if not nombre:
-                nombre = r.get('tecnico__email') or ''
+        for r in agg_mes:
+            asign = r['tickets_asignados'] or 0
+            res = r['tickets_resueltos'] or 0
+            pct = round((res / asign) * 100.0, 2) if asign > 0 else 0.0
+            nombre = f"{(r['tecnico__first_name'] or '').strip()} {(r['tecnico__last_name'] or '').strip()}".strip() or (r.get('tecnico__email') or '')
             rows.append({
                 'tecnico_id': r['tecnico'],
                 'nombre_completo': nombre,
-                'tickets_asignados': asignados,
-                'tickets_resueltos': resueltos,
-                'porcentaje_exito': porcentaje,
+                'tickets_asignados': asign,
+                'tickets_resueltos': res,
+                'porcentaje_exito': pct,
             })
 
-        # 1) Prioridad: los que resolvieron al menos 1
+        # 1) Bloque principal: con resueltos > 0
         resolvieron = [x for x in rows if x['tickets_resueltos'] > 0]
         resolvieron.sort(key=lambda x: (x['tickets_resueltos'], x['tickets_asignados']), reverse=True)
 
-        # 2) Relleno: los demás (aunque no hayan resuelto), por asignados DESC
+        # 2) Relleno interno: con asignados > 0 pero resueltos = 0 (si todavía faltan)
         usados = {x['tecnico_id'] for x in resolvieron}
-        relleno = [x for x in rows if x['tecnico_id'] not in usados]
-        relleno.sort(key=lambda x: (x['tickets_asignados'], x['tickets_resueltos']), reverse=True)
+        con_asignados = [x for x in rows if x['tecnico_id'] not in usados]
+        con_asignados.sort(key=lambda x: (x['tickets_asignados'], x['tickets_resueltos']), reverse=True)
 
-        # Top 5 combinando
-        top = (resolvieron + relleno)[:5]
+        top = (resolvieron + con_asignados)[:LIMIT]
+        faltan = LIMIT - len(top)
 
-        # Formato final solicitado
+        if faltan > 0:
+            # 3) Relleno final: técnicos activos SIN actividad ese mes, ordenados por histórico
+            faltantes = (
+                User.objects.filter(role=User.Role.TECH, is_active=True)
+                .exclude(pk__in=[x['tecnico_id'] for x in top])
+                .annotate(total_asignados_hist=Count('tickets_asignados'))  # histórico
+                .order_by('-total_asignados_hist', 'last_name', 'first_name')[:faltan]
+            )
+
+            for t in faltantes:
+                nombre = f"{(t.first_name or '').strip()} {(t.last_name or '').strip()}".strip() or (t.email or '')
+                top.append({
+                    'tecnico_id': t.pk,
+                    'nombre_completo': nombre,
+                    'tickets_asignados': 0,
+                    'tickets_resueltos': 0,
+                    'porcentaje_exito': 0.0,
+                })
+
+        # Formato final
         payload = [
             {
                 "nombre_completo": x['nombre_completo'],
@@ -127,9 +137,10 @@ class TechnicianPerformanceRankingView(APIView):
                 "tickets_resueltos": x['tickets_resueltos'],
                 "porcentaje_exito": round(x['porcentaje_exito'], 2),
             }
-            for x in top
+            for x in top[:LIMIT]
         ]
         return Response(payload, status=status.HTTP_200_OK)
+
 
 
 class ActiveClientsEvolutionView(APIView):

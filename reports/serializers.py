@@ -74,3 +74,11 @@ class StateDistributionResponseSerializer(serializers.Serializer):
     from_date = serializers.DateField() 
     to_date = serializers.DateField()
     items = StateDistributionItemSerializer(many=True)
+
+class TicketAgingItemSerializer(serializers.Serializer):
+    ticket_id = serializers.IntegerField()
+    titulo = serializers.CharField()
+    estado_codigo = serializers.CharField()
+    estado_nombre = serializers.CharField()
+    creado_en = serializers.DateTimeField()
+    dias = serializers.FloatField()

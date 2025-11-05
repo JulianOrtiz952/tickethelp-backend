@@ -5,7 +5,7 @@ from django.utils import timezone
 from datetime import datetime, timedelta
 from django.contrib.auth import get_user_model
 from django.db.models import Count, Q
-from django.db.models.functions import TruncMonth, Coalesce
+from django.db.models.functions import TruncMonth, Coalesce, Now
 from django.db.models.functions.datetime import ExtractHour, ExtractWeekDay
 from tickets.models import Ticket, StateChangeRequest, Estado
 from tickets.permissions import IsAdmin
@@ -18,7 +18,8 @@ from .serializers import (
     ActivityHeatmapSerializer,
     AverageResolutionTimeSerializer,
     StateDistributionItemSerializer,
-    StateDistributionResponseSerializer
+    StateDistributionResponseSerializer,
+    TicketAgingItemSerializer
 )
 
 User = get_user_model()
@@ -421,4 +422,42 @@ class StateDistributionView(APIView):
 
         # Serializar (por seguridad de tipos)
         ser = StateDistributionResponseSerializer(payload)
+        return Response(ser.data, status=status.HTTP_200_OK)
+
+class TicketAgingTopView(APIView):
+    """
+    Top 10 tickets con más tiempo abiertos (no finalizados).
+    - Métrica: Now() - creado_en (duración).
+    - Excluye estado_id = 10 (finalizado).
+    - Empates: por ID menor.
+    """
+    permission_classes = [IsAdmin]
+    FINAL_STATE_ID = 10
+    LIMIT = 10
+
+    def get(self, request):
+        qs = (
+            Ticket.objects
+            .exclude(estado_id=self.FINAL_STATE_ID)
+            .annotate(age=ExpressionWrapper(Now() - F('creado_en'), output_field=DurationField()))
+            .select_related('estado')
+            .order_by('-age', 'id')[:self.LIMIT]
+            .values('id', 'titulo', 'creado_en', 'estado__codigo', 'estado__nombre', 'age')
+        )
+
+        # preparar payload con días = age.total_seconds()/86400
+        items = []
+        for r in qs:
+            age = r['age']
+            dias = round(age.total_seconds() / 86400.0, 2) if age else 0.0
+            items.append({
+                'ticket_id': r['id'],
+                'titulo': r['titulo'],
+                'estado_codigo': r['estado__codigo'],
+                'estado_nombre': r['estado__nombre'],
+                'creado_en': r['creado_en'],
+                'dias': dias,
+            })
+
+        ser = TicketAgingItemSerializer(items, many=True)
         return Response(ser.data, status=status.HTTP_200_OK)

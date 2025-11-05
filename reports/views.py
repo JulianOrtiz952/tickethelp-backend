@@ -5,7 +5,7 @@ from collections import defaultdict
 from django.utils import timezone
 from datetime import datetime, timedelta
 from django.contrib.auth import get_user_model
-from django.db.models import Count, Q, Avg, F, OuterRef, Subquery, ExpressionWrapper, DurationField
+from django.db.models import Count, Q, Avg, F, OuterRef, Subquery, ExpressionWrapper, DurationField, DateTimeField
 from django.db.models.functions import TruncMonth, Coalesce, Now
 from django.db.models.functions.datetime import ExtractHour, ExtractWeekDay
 from tickets.models import Ticket, StateChangeRequest, Estado
@@ -649,43 +649,41 @@ class TicketAgingTopView(APIView):
 
 class WeekdayResolutionCountView(APIView):
     """
-    Devuelve {lunes..domingo} contando tickets CERRADOS por día de la semana.
-    Fuente de fecha:
-      - finalizado_en (si existe el campo)
-      - si no existe, actualizado_en
+    Conteo general de tickets FINALIZADOS por día de la semana.
+    - Final = estado_id == 5 (evita depender de es_final si no está marcado).
+    - Fecha de cierre usada = COALESCE(finalizado_en, actualizado_en, creado_en).
+    - Sin rangos de fecha (a menos que quieras agregarlos luego).
     """
+    FINAL_STATE_ID = 5
+
     def get(self, request, *args, **kwargs):
-        # 1) Campo base (cierre real)
-        FIELD = 'finalizado_en' if hasattr(Ticket, 'finalizado_en') else 'actualizado_en'
-
-        qs = Ticket.objects.filter(estado__es_final=True)
-
-        date_from = request.query_params.get('from')
-        date_to   = request.query_params.get('to')
-        if date_from:
-          qs = qs.filter(**{f"{FIELD}__date__gte": date_from})
-        if date_to:
-            qs = qs.filter(**{f"{FIELD}__date__lte": date_to})
-
-        # 1=domingo, 2=lunes, ... 7=sábado
-        raw = (
-            qs.annotate(dow=ExtractWeekDay(FIELD))
+        qs = (
+            Ticket.objects
+            .filter(estado_id=self.FINAL_STATE_ID)
+            .annotate(
+                close_at=Coalesce(
+                    'actualizado_en', 'creado_en',
+                    output_field=DateTimeField()
+                )
+            )
+            .filter(close_at__isnull=False)
+            .annotate(dow=ExtractWeekDay('close_at'))  # 1=domingo, 2=lunes, ... 7=sábado
             .values('dow')
             .annotate(total=Count('id'))
             .order_by('dow')
         )
 
-        # Queremos claves lunes..domingo
+        # Mapea al formato requerido
         map_num_a_nombre = {2:"lunes", 3:"martes", 4:"miercoles", 5:"jueves", 6:"viernes", 7:"sabado", 1:"domingo"}
         data = {k: 0 for k in ["lunes","martes","miercoles","jueves","viernes","sabado","domingo"]}
-        for r in raw:
-           nombre = map_num_a_nombre.get(r["dow"])
-           if nombre:
-            data[nombre] = r["total"]
+        for r in qs:
+            nombre = map_num_a_nombre.get(r["dow"])
+            if nombre:
+                data[nombre] = r["total"]
 
-            ser = WeekdayResolutionCountSerializer(data=data)
-            ser.is_valid(raise_exception=True)
-            return Response(ser.data, status=status.HTTP_200_OK)
+        ser = WeekdayResolutionCountSerializer(data=data)
+        ser.is_valid(raise_exception=True)
+        return Response(ser.data, status=status.HTTP_200_OK)
 
 def _compute_state_durations():
     """

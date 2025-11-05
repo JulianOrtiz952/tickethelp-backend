@@ -1,5 +1,16 @@
 from django.urls import path
-from reports.views import GeneralStatsView, TechnicianPerformanceRankingView, ActiveClientsEvolutionView, ActivityHeatmapView, AverageResolutionTimeView, TTRPromedioView, FlowFunnelView
+from reports.views import (
+    GeneralStatsView,
+    TechnicianPerformanceRankingView,
+    ActiveClientsEvolutionView,
+    ActivityHeatmapView,
+    AverageResolutionTimeView,
+    TTRPromedioView,
+    FlowFunnelView,
+    StateDistributionView,
+    TicketAgingTopView,
+    ResolutionsByWeekdayView
+)
 
 urlpatterns = [
     path('stats/general-stats/', GeneralStatsView.as_view(), name='general-stats'),
@@ -9,5 +20,8 @@ urlpatterns = [
     path('stats/avg-resolution-time/', AverageResolutionTimeView.as_view(), name='avg-resolution-time'),
     path('stats/ttr-promedio/', TTRPromedioView.as_view(), name='ttr-promedio'),
     path('stats/flow-funnel/', FlowFunnelView.as_view(), name='flow-funnel'),
+    path('stats/status-distribution/', StateDistributionView.as_view(), name='status-distribution'),
+    path('stats/aging-top/', TicketAgingTopView.as_view(), name='aging-top'),
+    path('stats/resolutions-by-weekday/', ResolutionsByWeekdayView.as_view(), name='resolutions-by-weekday'),
 ]
 

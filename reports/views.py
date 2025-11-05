@@ -7,7 +7,7 @@ from django.contrib.auth import get_user_model
 from django.db.models import Count, Q
 from django.db.models.functions import TruncMonth, Coalesce
 from django.db.models.functions.datetime import ExtractHour, ExtractWeekDay
-from tickets.models import Ticket, StateChangeRequest
+from tickets.models import Ticket, StateChangeRequest, Estado
 from tickets.permissions import IsAdmin
 from django.db.models import Avg, F, OuterRef, Subquery, ExpressionWrapper, DurationField
 
@@ -16,7 +16,9 @@ from .serializers import (
     TechnicianPerformanceSerializer,
     ActiveClientsEvolutionSerializer,
     ActivityHeatmapSerializer,
-    AverageResolutionTimeSerializer
+    AverageResolutionTimeSerializer,
+    StateDistributionItemSerializer,
+    StateDistributionResponseSerializer
 )
 
 User = get_user_model()
@@ -312,4 +314,111 @@ class AverageResolutionTimeView(APIView):
             'tickets_contemplados': int(total)
         }
         ser = AverageResolutionTimeSerializer(payload)
+        return Response(ser.data, status=status.HTTP_200_OK)
+
+class StateDistributionView(APIView):
+    """
+    Distribución porcentual de tickets por estado (para gráfico circular).
+
+    Rango de fechas:
+      - Si NO se envía: to_date = hoy, from_date = hoy - 30 días.
+      - Si se envía: ?from=YYYY-MM-DD&to=YYYY-MM-DD
+        * Validar formato de fecha
+        * from <= to
+        * (to - from) <= 365 días
+        * to no puede ser futuro (opcionalmente puedes permitirlo si quieres)
+
+    Cálculo:
+      - Considera los tickets con creado_en dentro del rango [from 00:00:00, to 23:59:59].
+      - Agrupa por estado y calcula porcentaje = cantidad / total * 100.
+      - Si algún estado no tiene tickets en el rango, se devuelve con cantidad=0, porcentaje=0.0
+    """
+    permission_classes = [IsAdmin]
+
+    MAX_DAYS = 365
+
+    def get(self, request):
+        tz = timezone.get_current_timezone()
+
+        # 1) Parseo y validaciones de fechas
+        from_str = request.query_params.get('from')
+        to_str   = request.query_params.get('to')
+
+        today = timezone.localdate()
+        if not to_str and not from_str:
+            to_date = today
+            from_date = to_date - timedelta(days=30)
+        else:
+            # Validar formato YYYY-MM-DD
+            def parse_date_safe(s, name):
+                try:
+                    return datetime.strptime(s, "%Y-%m-%d").date()
+                except Exception:
+                    raise ValueError(f"Parámetro '{name}' inválido. Formato esperado: YYYY-MM-DD")
+
+            try:
+                if not from_str or not to_str:
+                    return Response(
+                        {"detail": "Debe enviar ambos parámetros 'from' y 'to' en formato YYYY-MM-DD."},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+
+                from_date = parse_date_safe(from_str, "from")
+                to_date   = parse_date_safe(to_str, "to")
+            except ValueError as e:
+                return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+            # from <= to
+            if from_date > to_date:
+                return Response({"detail": "El parámetro 'from' no puede ser mayor que 'to'."},
+                                status=status.HTTP_400_BAD_REQUEST)
+
+            # rango <= 365 días
+            if (to_date - from_date).days > self.MAX_DAYS:
+                return Response({"detail": f"El rango no puede superar {self.MAX_DAYS} días."},
+                                status=status.HTTP_400_BAD_REQUEST)
+
+            # to no en el futuro (opcional)
+            if to_date > today:
+                return Response({"detail": "La fecha 'to' no puede estar en el futuro."},
+                                status=status.HTTP_400_BAD_REQUEST)
+
+        # 2) Normalizar a datetimes con zona
+        start_dt = datetime(from_date.year, from_date.month, from_date.day, 0, 0, 0, tzinfo=tz)
+        end_dt   = datetime(to_date.year,   to_date.month,   to_date.day,   23, 59, 59, tzinfo=tz)
+
+        # 3) Traer todos los estados (asumimos 5 en tu sistema)
+        estados = list(Estado.objects.all().values('id', 'codigo', 'nombre'))
+
+        # 4) Conteo por estado en el rango
+        counts = (
+            Ticket.objects
+            .filter(creado_en__gte=start_dt, creado_en__lte=end_dt)
+            .values('estado_id')
+            .annotate(cantidad=Count('id'))
+        )
+        counts_map = {row['estado_id']: row['cantidad'] for row in counts}
+        total = sum(counts_map.values())
+
+        # 5) Construir respuesta con todos los estados (incluyendo los 0)
+        items = []
+        for e in estados:
+            cant = counts_map.get(e['id'], 0)
+            pct = round((cant / total) * 100.0, 2) if total > 0 else 0.0
+            items.append({
+                'estado_codigo': e['codigo'],
+                'estado_nombre': e['nombre'],
+                'cantidad': int(cant),
+                'porcentaje': pct,
+            })
+
+        payload = {
+            'total': int(total),
+            'from_date': from_date,
+            'to_date': to_date,
+            'items': items
+        }
+
+        # Serializar (por seguridad de tipos)
+        ser = StateDistributionResponseSerializer(payload)
         return Response(ser.data, status=status.HTTP_200_OK)

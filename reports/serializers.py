@@ -62,3 +62,15 @@ class AverageResolutionTimeSerializer(serializers.Serializer):
     promedio_horas = serializers.FloatField()
     promedio_dias = serializers.FloatField()
     tickets_contemplados = serializers.IntegerField()
+
+class StateDistributionItemSerializer(serializers.Serializer):
+    estado_codigo = serializers.CharField()
+    estado_nombre = serializers.CharField()
+    cantidad = serializers.IntegerField()
+    porcentaje = serializers.FloatField()
+
+class StateDistributionResponseSerializer(serializers.Serializer):
+    total = serializers.IntegerField()
+    from_date = serializers.DateField() 
+    to_date = serializers.DateField()
+    items = StateDistributionItemSerializer(many=True)

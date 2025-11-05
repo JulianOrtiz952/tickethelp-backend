@@ -1,5 +1,5 @@
 from django.urls import path
-from reports.views import GeneralStatsView, TechnicianPerformanceRankingView, ActiveClientsEvolutionView, ActivityHeatmapView, AverageResolutionTimeView, StateDistributionView, TicketAgingTopView, ResolutionsByWeekdayView, , TTRPromedioView
+from reports.views import GeneralStatsView, TechnicianPerformanceRankingView, ActiveClientsEvolutionView, ActivityHeatmapView, AverageResolutionTimeView, StateDistributionView, TicketAgingTopView, ResolutionsByWeekdayView, TTRPromedioView
 
 urlpatterns = [
     path('stats/general-stats/', GeneralStatsView.as_view(), name='general-stats'),

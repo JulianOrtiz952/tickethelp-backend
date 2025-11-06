@@ -11,7 +11,8 @@ from reports.views import (
     TicketAgingTopView,
     WeekdayResolutionCountView,
     TTAByStateView,
-    TTATotalView
+    TTATotalView,
+    ActiveClientsMonthlyComparisonView
 )
 
 urlpatterns = [
@@ -27,5 +28,6 @@ urlpatterns = [
     path('stats/resolutions-by-weekday/', WeekdayResolutionCountView.as_view(), name='resolutions-by-weekday'),
     path('stats/tta/by-state/', TTAByStateView.as_view(), name='tta-by-state'),
     path('stats/tta/total/', TTATotalView.as_view(), name='tta-total'),
+    path("stats/clientes-activos-mes/", ActiveClientsMonthlyComparisonView.as_view(), name="clientes-activos-mes"),
 ]
 

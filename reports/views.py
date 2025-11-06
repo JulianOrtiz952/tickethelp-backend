@@ -35,9 +35,38 @@ class GeneralStatsView(APIView):
     """
     permission_classes = [IsAdmin]
     FINAL_STATE_ID = 5
+    DEFAULT_DAYS_RANGE = 30
 
     def get(self, request):
-        # Conteos
+        # Determinar rango de fechas (por defecto últimos 30 días)
+        tz = timezone.get_current_timezone()
+        from_str = request.query_params.get('from')
+        to_str = request.query_params.get('to')
+        
+        if from_str and to_str:
+            try:
+                from_date = datetime.strptime(from_str, "%Y-%m-%d").date()
+                to_date = datetime.strptime(to_str, "%Y-%m-%d").date()
+                
+                if from_date > to_date:
+                    return Response(
+                        {"detail": "El parámetro 'from' no puede ser mayor que 'to'."},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                
+                start_dt = datetime(from_date.year, from_date.month, from_date.day, 0, 0, 0, tzinfo=tz)
+                end_dt = datetime(to_date.year, to_date.month, to_date.day, 23, 59, 59, tzinfo=tz)
+            except ValueError:
+                return Response(
+                    {"detail": "Formato de fecha inválido. Use YYYY-MM-DD."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+        else:
+            # Por defecto: últimos 30 días
+            end_dt = timezone.now()
+            start_dt = end_dt - timedelta(days=self.DEFAULT_DAYS_RANGE)
+
+        # Conteos de tickets
         total_tickets = Ticket.objects.count()
         tickets_finalizados_count = Ticket.objects.filter(estado_id=self.FINAL_STATE_ID).count()
         tickets_abiertos_count = Ticket.objects.exclude(estado_id=self.FINAL_STATE_ID).count()
@@ -45,10 +74,44 @@ class GeneralStatsView(APIView):
         # Promedio de éxito (sobre la totalidad de tickets)
         promedio_exito = round((tickets_finalizados_count / total_tickets) * 100.0, 2) if total_tickets else 0.0
 
+        # Técnicos con actividad en el rango (técnicos que tienen al menos un ticket en el rango)
+        tecnicos_con_actividad_ids = (
+            User.objects.filter(
+                role=User.Role.TECH,
+                tickets_asignados__creado_en__gte=start_dt,
+                tickets_asignados__creado_en__lte=end_dt
+            )
+            .distinct()
+            .values_list('pk', flat=True)
+        )
+        
+        # Técnicos activos: tienen actividad en el rango Y is_active=True
+        tecnicos_activos_count = (
+            User.objects.filter(
+                role=User.Role.TECH,
+                is_active=True,
+                pk__in=tecnicos_con_actividad_ids
+            )
+            .distinct()
+            .count()
+        )
+        
+        # Técnicos inactivos: sin actividad en el rango O is_active=False
+        # Son técnicos que: (no tienen actividad en el rango) O (is_active=False)
+        tecnicos_inactivos_count = (
+            User.objects.filter(role=User.Role.TECH)
+            .exclude(
+                Q(pk__in=tecnicos_con_actividad_ids) & Q(is_active=True)
+            )
+            .count()
+        )
+
         stats_data = {
             'tickets_abiertos': tickets_abiertos_count,
             'tickets_finalizados': tickets_finalizados_count,
             'promedio_exito': promedio_exito,
+            'tecnicos_activos': tecnicos_activos_count,
+            'tecnicos_inactivos': tecnicos_inactivos_count,
         }
         serializer = GeneralStatsSerializer(stats_data)
         return Response(serializer.data, status=status.HTTP_200_OK)

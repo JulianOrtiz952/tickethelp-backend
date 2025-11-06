@@ -4,7 +4,7 @@ from rest_framework import serializers
 class GeneralStatsSerializer(serializers.Serializer):
     """
     Serializer para las estadísticas generales del sistema.
-    Retorna la cantidad de tickets abiertos y cerrados.
+    Retorna la cantidad de tickets abiertos y cerrados, y estadísticas de técnicos.
     """
     tickets_abiertos = serializers.IntegerField(
         help_text="Cantidad total de tickets que NO están en estado 5"
@@ -14,6 +14,12 @@ class GeneralStatsSerializer(serializers.Serializer):
     )
     promedio_exito = serializers.FloatField(
         help_text="Porcentaje de éxito = tickets_finalizados / total_tickets * 100"
+    )
+    tecnicos_activos = serializers.IntegerField(
+        help_text="Cantidad de técnicos con al menos un ticket atendido en el rango y is_active=True"
+    )
+    tecnicos_inactivos = serializers.IntegerField(
+        help_text="Cantidad de técnicos sin actividad en el rango o is_active=False"
     )
 
 class TechnicianPerformanceSerializer(serializers.Serializer):

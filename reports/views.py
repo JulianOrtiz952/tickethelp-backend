@@ -584,61 +584,108 @@ class StateDistributionView(APIView):
 
 class TicketAgingTopView(APIView):
     """
-    Top 10 tickets más antiguos **no finalizados**.
-    - No incluye estado 5.
-    - Desempate por id ascendente cuando hay misma antigüedad.
+    Top 10 de tickets más antiguos NO FINALIZADOS.
+    - Excluye estado 5 (finalizado): estado_id__lt=5
+    - Desempate por id (menor id primero cuando hay empate)
+    - Devuelve metadatos de estado, técnico y cliente según formato solicitado
     """
+    FINAL_STATE_ID = 5
+
     def get(self, request, *args, **kwargs):
+        tz = timezone.get_current_timezone()
+
         qs = (
             Ticket.objects
-            .filter(estado_id__lt=5)  # ← clave del arreglo
+            .filter(estado_id__lt=self.FINAL_STATE_ID)  # ← clave: no incluir finalizados
+            .select_related('estado', 'tecnico', 'cliente')
             .annotate(age=ExpressionWrapper(Now() - F('creado_en'), output_field=DurationField()))
             .order_by('-age', 'id')[:10]
         )
 
-        data = [
-            {
-                "id": t.id,
+        now = timezone.now()
+        data = []
+
+        for t in qs:
+            # creado_en en zona local e ISO con offset
+            creado_local = timezone.localtime(t.creado_en, tz)
+            # días con 2 decimales (diferencia ahora - creado)
+            dias = round((now - t.creado_en).total_seconds() / 86400.0, 2)
+
+            estado = getattr(t, 'estado', None)
+            tecnico = getattr(t, 'tecnico', None)
+            cliente = getattr(t, 'cliente', None)
+
+            tecnico_nombre = " ".join(filter(None, [
+                getattr(tecnico, 'first_name', None),
+                getattr(tecnico, 'last_name', None)
+            ])) if tecnico else None
+            cliente_nombre = " ".join(filter(None, [
+                getattr(cliente, 'first_name', None),
+                getattr(cliente, 'last_name', None)
+            ])) if cliente else None
+
+            data.append({
+                "ticket_id": t.id,
                 "titulo": getattr(t, "titulo", None),
-                "cliente_id": getattr(t, "cliente_id", None),
-                "tecnico_id": getattr(t, "tecnico_id", None),
-                "estado_id": t.estado_id,
-                "creado_en": t.creado_en,
-                "antiguedad_segundos": int(t.age.total_seconds()) if hasattr(t.age, "total_seconds") else None,
-            }
-            for t in qs
-        ]
+
+                "estado_codigo": getattr(estado, "codigo", None),
+                "estado_nombre": getattr(estado, "nombre", None),
+
+                "creado_en": creado_local.isoformat(),
+                "dias": dias,
+
+                "tecnico_id": getattr(tecnico, "document", None),
+                "tecnico_nombre": tecnico_nombre,
+                "tecnico_email": getattr(tecnico, "email", None),
+
+                "cliente_id": getattr(cliente, "document", None),
+                "cliente_nombre": cliente_nombre,
+                "cliente_email": getattr(cliente, "email", None),
+            })
+
         return Response(data, status=status.HTTP_200_OK)
 
 
 class WeekdayResolutionCountView(APIView):
     """
     Conteo general de tickets FINALIZADOS por día de la semana.
-    - Final = estado_id == 5 (evita depender de es_final si no está marcado).
-    - Fecha de cierre usada = COALESCE(finalizado_en, actualizado_en, creado_en).
-    - Sin rangos de fecha (a menos que quieras agregarlos luego).
+    - Final = estado_id == 5
+    - Fecha de cierre usada = COALESCE(finalizado_en, actualizado_en, creado_en)
+    - Día calculado en zona horaria local (America/Bogota)
     """
     FINAL_STATE_ID = 5
 
     def get(self, request, *args, **kwargs):
+        tz = timezone.get_current_timezone()  # usa TIME_ZONE de settings.py (ponlo en 'America/Bogota')
+
         qs = (
             Ticket.objects
             .filter(estado_id=self.FINAL_STATE_ID)
             .annotate(
                 close_at=Coalesce(
-                    'actualizado_en', 'creado_en',
+                    'finalizado_en', 'actualizado_en', 'creado_en',
                     output_field=DateTimeField()
                 )
             )
             .filter(close_at__isnull=False)
-            .annotate(dow=ExtractWeekDay('close_at'))  # 1=domingo, 2=lunes, ... 7=sábado
+            # 1=domingo, 2=lunes, ... 7=sábado | ¡Con tz local!
+            .annotate(dow=ExtractWeekDay('close_at', tzinfo=tz))
             .values('dow')
             .annotate(total=Count('id'))
             .order_by('dow')
         )
 
-        # Mapea al formato requerido
-        map_num_a_nombre = {1:"lunes", 2:"martes", 3:"miercoles", 4:"jueves", 5:"viernes", 6:"sabado", 7:"domingo"}
+        # Mapa CORRECTO para ExtractWeekDay
+        map_num_a_nombre = {
+            2: "lunes",
+            3: "martes",
+            4: "miercoles",
+            5: "jueves",
+            6: "viernes",
+            7: "sabado",
+            1: "domingo",
+        }
+
         data = {k: 0 for k in ["lunes","martes","miercoles","jueves","viernes","sabado","domingo"]}
         for r in qs:
             nombre = map_num_a_nombre.get(r["dow"])
@@ -648,7 +695,7 @@ class WeekdayResolutionCountView(APIView):
         ser = WeekdayResolutionCountSerializer(data=data)
         ser.is_valid(raise_exception=True)
         return Response(ser.data, status=status.HTTP_200_OK)
-
+        
 def _compute_state_durations():
     """
     Devuelve dos estructuras:

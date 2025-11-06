@@ -1,12 +1,12 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from collections import defaultdict
+from collections import defaultdict, Counter
 from django.utils import timezone
 from datetime import datetime, timedelta
 from django.contrib.auth import get_user_model
-from django.db.models import Count, Q, Avg, F, OuterRef, Subquery, ExpressionWrapper, DurationField, DateTimeField
-from django.db.models.functions import TruncMonth, Coalesce, Now
+from django.db.models import Count, Q, Avg, F, OuterRef, Subquery, ExpressionWrapper, DurationField, DateTimeField, Func, Value
+from django.db.models.functions import TruncMonth, Coalesce, Now, Cast
 from django.db.models.functions.datetime import ExtractHour, ExtractWeekDay
 from tickets.models import Ticket, StateChangeRequest, Estado
 from tickets.permissions import IsAdmin
@@ -709,63 +709,67 @@ class TicketAgingTopView(APIView):
         return Response(data, status=status.HTTP_200_OK)
 
 
+class Timezone(Func):
+    """
+    timezone('America/Bogota', <timestamp>)
+    """
+    function = 'TIMEZONE'
+    arity = 2
+    output_field = DateTimeField()  # ← CLAVE para evitar el FieldError
+
+
 class WeekdayResolutionCountView(APIView):
     """
-    Conteo general de tickets FINALIZADOS por día de la semana.
+    Conteo general de tickets FINALIZADOS por día de la semana (lunes..domingo).
     - Final = estado_id == 5
-    - Fecha usada = COALESCE( finalizado_en?, actualizado_en, creado_en )
-    - Día calculado en zona horaria local (America/Bogota)
+    - Fecha usada = COALESCE(finalizado_en?, actualizado_en, creado_en)
+    - Conversión a zona local (America/Bogota) en Python → DB-agnóstico (SQLite/Postgres)
     """
 
     FINAL_STATE_ID = 5
 
     def get(self, request, *args, **kwargs):
-        tz = timezone.get_current_timezone()  # asegurate TIME_ZONE='America/Bogota' y USE_TZ=True
+        tz = timezone.get_current_timezone()  # asegúrate: TIME_ZONE='America/Bogota', USE_TZ=True
 
-        # Construir Coalesce solo con campos que existan realmente
-        available_fields = {f.name for f in Ticket._meta.get_fields() if hasattr(f, "attname")}
-        coalesce_args = []
-        if "finalizado_en" in available_fields:
-            coalesce_args.append("finalizado_en")
-        if "actualizado_en" in available_fields:
-            coalesce_args.append("actualizado_en")
-        if "creado_en" in available_fields:
-            coalesce_args.append("creado_en")
+        # Construye Coalesce solo con campos existentes
+        available = {f.attname for f in Ticket._meta.concrete_fields}
+        coalesce_fields = []
+        if 'finalizado_en' in available:
+            coalesce_fields.append('finalizado_en')
+        if 'actualizado_en' in available:
+            coalesce_fields.append('actualizado_en')
+        if 'creado_en' in available:
+            coalesce_fields.append('creado_en')
+        if not coalesce_fields:
+            coalesce_fields = ['actualizado_en', 'creado_en']
 
-        # respaldo duro (por si acaso)
-        if not coalesce_args:
-            coalesce_args = ["actualizado_en", "creado_en"]
-
+        # Trae solo los finalizados con su "close_at"
         qs = (
             Ticket.objects
             .filter(estado_id=self.FINAL_STATE_ID)
-            .annotate(
-                close_at=Coalesce(*coalesce_args, output_field=DateTimeField())
-            )
-            .filter(close_at__isnull=False)
-            # 1=domingo, 2=lunes, ... 7=sábado (con TZ local para evitar el "día anterior")
-            .annotate(dow=ExtractWeekDay("close_at", tzinfo=tz))
-            .values("dow")
-            .annotate(total=Count("id"))
-            .order_by("dow")
+            .annotate(close_at=Coalesce(*coalesce_fields, output_field=DateTimeField()))
+            .values_list('close_at', flat=True)
         )
 
-        # Mapa correcto para ExtractWeekDay
-        map_num_a_nombre = {
-            2: "lunes",
-            3: "martes",
-            4: "miercoles",
-            5: "jueves",
-            6: "viernes",
-            7: "sabado",
-            1: "domingo",
-        }
+        # Contar en Python por día local
+        counter = Counter()
+        for dt in qs:
+            if not dt:
+                continue
+            # dt normalmente ya es "aware" en UTC si USE_TZ=True
+            try:
+                local_dt = timezone.localtime(dt, tz)
+            except Exception:
+                # Por si viniera naive en SQLite; lo tratamos como UTC y luego convertimos
+                local_dt = timezone.localtime(timezone.make_aware(dt, timezone.utc), tz)
 
-        data = {k: 0 for k in ["lunes","martes","miercoles","jueves","viernes","sabado","domingo"]}
-        for r in qs:
-            nombre = map_num_a_nombre.get(r["dow"])
-            if nombre:
-                data[nombre] = r["total"]
+            # weekday(): 0=lunes ... 6=domingo
+            wd = local_dt.weekday()
+            counter[wd] += 1
+
+        # Mapear a tu formato
+        idx_to_name = {0: "lunes", 1: "martes", 2: "miercoles", 3: "jueves", 4: "viernes", 5: "sabado", 6: "domingo"}
+        data = {name: counter.get(idx, 0) for idx, name in idx_to_name.items()}
 
         ser = WeekdayResolutionCountSerializer(data=data)
         ser.is_valid(raise_exception=True)

@@ -6,10 +6,11 @@ from django.utils import timezone
 from datetime import datetime, timedelta
 from django.contrib.auth import get_user_model
 from django.db.models import Count, Q, Avg, F, OuterRef, Subquery, ExpressionWrapper, DurationField, DateTimeField, Func, Value
-from django.db.models.functions import TruncMonth, Coalesce, Now, Cast
+from django.db.models.functions import TruncMonth, Coalesce, Now, Cast, Lag
 from django.db.models.functions.datetime import ExtractHour, ExtractWeekDay
 from tickets.models import Ticket, StateChangeRequest, Estado
 from tickets.permissions import IsAdmin
+from django.db.models.expressions import Window
 
 from .serializers import (
     GeneralStatsSerializer,
@@ -904,25 +905,69 @@ class TTAByStateView(APIView):
 
 class TTATotalView(APIView):
     """
-    TTA total = suma de los promedios por estado.
+    TTA total (global) = suma de los promedios por estado (sin funciones de ventana).
+    Para cada transición aprobada, delta = approved_at - (aprobación previa del mismo ticket,
+    o creado_en del ticket si no existe previa). El delta se asigna al 'to_state'.
     """
-    permission_classes = [IsAdmin]
+    def get(self, request, *args, **kwargs):
+        try:
+            # Subquery: approved_at inmediatamente anterior del mismo ticket
+            prev_approved_subq = Subquery(
+                StateChangeRequest.objects
+                .filter(
+                    ticket_id=OuterRef('ticket_id'),
+                    approved_at__lt=OuterRef('approved_at'),
+                    approved_at__isnull=False,
+                )
+                .order_by('-approved_at')
+                .values('approved_at')[:1]
+            )
 
-    def get(self, request):
-        sums, counts, meta = _compute_state_durations()
+            qs = (
+                StateChangeRequest.objects
+                .filter(approved_at__isnull=False)
+                .select_related('ticket', 'to_state')
+                .annotate(
+                    prev_approved_at=prev_approved_subq,
+                    prev_time=Coalesce(F('prev_approved_at'), F('ticket__creado_en')),
+                    delta=ExpressionWrapper(
+                        F('approved_at') - F('prev_time'),
+                        output_field=DurationField()
+                    ),
+                )
+                .values(
+                    'to_state',
+                    'to_state__codigo',
+                    'to_state__es_activo',
+                    'to_state__es_final',
+                )
+                .annotate(
+                    muestras=Count('id'),
+                    avg_delta=Avg('delta'),
+                )
+            )
 
-        # Suma de promedios (solo estados con al menos 1 muestra)
-        tta_seconds = 0.0
-        for sid, total in sums.items():
-            n = counts.get(sid, 0)
-            if n > 0:
-                tta_seconds += (total.total_seconds() / n)
+            total_segundos = 0.0
+            estados_sumados = 0
 
-        payload = {
-            'tta_segundos': round(tta_seconds, 2),
-            'tta_horas': round(tta_seconds / 3600.0, 2),
-            'tta_dias': round(tta_seconds / 86400.0, 2),
-            'estados_sumados': sum(1 for sid in counts if counts[sid] > 0),
-        }
-        ser = TTATotalSerializer(payload)
-        return Response(ser.data, status=status.HTTP_200_OK)
+            for row in qs:
+                avg_delta = row['avg_delta']
+                muestras = row['muestras'] or 0
+                if not avg_delta or muestras == 0:
+                    continue
+                total_segundos += avg_delta.total_seconds()
+                estados_sumados += 1
+
+            data = {
+                "tta_segundos": round(total_segundos, 2),
+                "tta_horas": round(total_segundos / 3600.0, 2),
+                "tta_dias": round(total_segundos / 86400.0, 2),
+                "estados_sumados": estados_sumados
+            }
+            return Response(data, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            return Response(
+                {"detail": "Error calculando TTA total", "error": str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )

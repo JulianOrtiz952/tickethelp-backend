@@ -713,32 +713,44 @@ class WeekdayResolutionCountView(APIView):
     """
     Conteo general de tickets FINALIZADOS por día de la semana.
     - Final = estado_id == 5
-    - Fecha de cierre usada = COALESCE(finalizado_en, actualizado_en, creado_en)
+    - Fecha usada = COALESCE( finalizado_en?, actualizado_en, creado_en )
     - Día calculado en zona horaria local (America/Bogota)
     """
+
     FINAL_STATE_ID = 5
 
     def get(self, request, *args, **kwargs):
-        tz = timezone.get_current_timezone()  # usa TIME_ZONE de settings.py (ponlo en 'America/Bogota')
+        tz = timezone.get_current_timezone()  # asegurate TIME_ZONE='America/Bogota' y USE_TZ=True
+
+        # Construir Coalesce solo con campos que existan realmente
+        available_fields = {f.name for f in Ticket._meta.get_fields() if hasattr(f, "attname")}
+        coalesce_args = []
+        if "finalizado_en" in available_fields:
+            coalesce_args.append("finalizado_en")
+        if "actualizado_en" in available_fields:
+            coalesce_args.append("actualizado_en")
+        if "creado_en" in available_fields:
+            coalesce_args.append("creado_en")
+
+        # respaldo duro (por si acaso)
+        if not coalesce_args:
+            coalesce_args = ["actualizado_en", "creado_en"]
 
         qs = (
             Ticket.objects
             .filter(estado_id=self.FINAL_STATE_ID)
             .annotate(
-                close_at=Coalesce(
-                    'finalizado_en', 'actualizado_en', 'creado_en',
-                    output_field=DateTimeField()
-                )
+                close_at=Coalesce(*coalesce_args, output_field=DateTimeField())
             )
             .filter(close_at__isnull=False)
-            # 1=domingo, 2=lunes, ... 7=sábado | ¡Con tz local!
-            .annotate(dow=ExtractWeekDay('close_at', tzinfo=tz))
-            .values('dow')
-            .annotate(total=Count('id'))
-            .order_by('dow')
+            # 1=domingo, 2=lunes, ... 7=sábado (con TZ local para evitar el "día anterior")
+            .annotate(dow=ExtractWeekDay("close_at", tzinfo=tz))
+            .values("dow")
+            .annotate(total=Count("id"))
+            .order_by("dow")
         )
 
-        # Mapa CORRECTO para ExtractWeekDay
+        # Mapa correcto para ExtractWeekDay
         map_num_a_nombre = {
             2: "lunes",
             3: "martes",
@@ -757,7 +769,7 @@ class WeekdayResolutionCountView(APIView):
 
         ser = WeekdayResolutionCountSerializer(data=data)
         ser.is_valid(raise_exception=True)
-        return Response(ser.data, status=status.HTTP_200_OK)
+        return Response(ser.data)
         
 def _compute_state_durations():
     """

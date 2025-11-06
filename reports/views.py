@@ -765,6 +765,7 @@ class WeekdayResolutionCountView(APIView):
 
             # weekday(): 0=lunes ... 6=domingo
             wd = local_dt.weekday()
+            wd = (wd + 1) % 7
             counter[wd] += 1
 
         # Mapear a tu formato

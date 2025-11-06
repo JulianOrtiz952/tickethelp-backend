@@ -674,7 +674,7 @@ class WeekdayResolutionCountView(APIView):
         )
 
         # Mapea al formato requerido
-        map_num_a_nombre = {2:"lunes", 3:"martes", 4:"miercoles", 5:"jueves", 6:"viernes", 7:"sabado", 1:"domingo"}
+        map_num_a_nombre = {1:"lunes", 2:"martes", 3:"miercoles", 4:"jueves", 5:"viernes", 6:"sabado", 7:"domingo"}
         data = {k: 0 for k in ["lunes","martes","miercoles","jueves","viernes","sabado","domingo"]}
         for r in qs:
             nombre = map_num_a_nombre.get(r["dow"])

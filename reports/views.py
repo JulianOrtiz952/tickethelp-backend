@@ -908,3 +908,66 @@ class TTATotalView(APIView):
                 {"detail": "Error calculando TTA total", "error": str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+class ActiveClientsMonthlyComparisonView(APIView):
+    """
+    Clientes únicos que abrieron ticket (al menos uno) en el mes actual vs mes anterior.
+    Se toma Ticket.creado_en como fecha de apertura. Cuenta 1 por cliente.
+    JSON:
+    {
+      "mes_actual": {"anio": 2025, "mes": 11, "clientes_unicos": 12},
+      "mes_anterior": {"anio": 2025, "mes": 10, "clientes_unicos": 8},
+      "variacion_porcentual": 50.0,
+      "diferencia_absoluta": 4
+    }
+    """
+
+    def get(self, request, *args, **kwargs):
+        try:
+            # Tomamos la hora local para cortes mensuales (ej. America/Bogota si tu settings lo usan)
+            now_local = timezone.localtime()
+
+            # Primer día del mes actual (00:00:00)
+            start_cur = now_local.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+            # Primer día del mes siguiente
+            start_next = (start_cur + timedelta(days=32)).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+            # Primer día del mes anterior
+            start_prev = (start_cur - timedelta(days=1)).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+            # Clientes únicos con al menos un ticket en cada mes (1 por cliente)
+            cur_clients = (Ticket.objects
+                           .filter(creado_en__gte=start_cur, creado_en__lt=start_next)
+                           .values('cliente_id').distinct().count())
+
+            prev_clients = (Ticket.objects
+                            .filter(creado_en__gte=start_prev, creado_en__lt=start_cur)
+                            .values('cliente_id').distinct().count())
+
+            # Variación porcentual respecto al mes anterior
+            if prev_clients > 0:
+                variacion = round(((cur_clients - prev_clients) / prev_clients) * 100.0, 2)
+            else:
+                # Convención: si el mes anterior fue 0 y el actual > 0 => 100%; si ambos 0 => 0%
+                variacion = 100.0 if cur_clients > 0 else 0.0
+
+            data = {
+                "mes_actual": {
+                    "anio": start_cur.year,
+                    "mes": start_cur.month,
+                    "clientes_unicos": cur_clients
+                },
+                "mes_anterior": {
+                    "anio": start_prev.year,
+                    "mes": start_prev.month,
+                    "clientes_unicos": prev_clients
+                },
+                "variacion_porcentual": variacion,
+                "diferencia_absoluta": cur_clients - prev_clients
+            }
+            return Response(data, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            return Response(
+                {"detail": "Error calculando comparación de clientes únicos", "error": str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )

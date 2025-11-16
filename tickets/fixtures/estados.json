@@ -48,5 +48,15 @@
       "es_activo": false,
       "es_final": true
     }
+  },
+  {
+    "model": "tickets.estado",
+    "pk": 6,
+    "fields": {
+      "codigo": "trial_pending_approval",
+      "nombre": "En pruebas pendiente de aprobación",
+      "es_activo": true,
+      "es_final": false
+    }
   }
 ]

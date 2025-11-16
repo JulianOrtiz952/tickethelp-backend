@@ -9,7 +9,7 @@ from django.contrib.auth import get_user_model
 from django.utils import timezone
 import tickets
 from tickets.models import Ticket, Estado, StateChangeRequest
-from tickets.serializers import TicketSerializer, EstadoSerializer, LeastBusyTechnicianSerializer, ChangeTechnicianSerializer, ActiveTechnicianSerializer, StateChangeSerializer, StateApprovalSerializer, PendingApprovalSerializer
+from tickets.serializers import TicketSerializer, EstadoSerializer, LeastBusyTechnicianSerializer, ChangeTechnicianSerializer, ActiveTechnicianSerializer, StateChangeSerializer, StateApprovalSerializer, PendingApprovalSerializer, RequestFinalizationSerializer
 from notifications.services import NotificationService
 
 User = get_user_model()
@@ -337,4 +337,135 @@ class TicketListView(ListAPIView):
             'message': 'Lista de tickets',
             'total_tickets': queryset.count(),
             'tickets': serializer.data
+        }, status=status.HTTP_200_OK)
+
+
+class RequestFinalizationAV(UpdateAPIView):
+    """
+    Endpoint para que un técnico solicite la finalización de un ticket.
+    El ticket pasa a "En pruebas pendiente de aprobación" y se crea una solicitud
+    que debe ser aprobada por el administrador.
+    """
+    permission_classes = [IsTechnician]
+    serializer_class = RequestFinalizationSerializer
+    http_method_names = ['put', 'patch', 'options', 'head']
+
+    def get_object(self):
+        ticket_id = self.kwargs.get('ticket_id')
+        return get_object_or_404(Ticket, pk=ticket_id)
+
+    def put(self, request, *args, **kwargs):
+        # Escenario 7 - Usuario no autenticado
+        # La validación de autenticación se hace automáticamente por IsTechnician
+        # pero verificamos explícitamente para dar un mensaje claro
+        user = getattr(request, 'user', None)
+        if not user or not user.is_authenticated:
+            return Response({
+                'error': 'No autenticado',
+                'message': 'Debe autenticarse para solicitar la finalización de tickets.'
+            }, status=status.HTTP_401_UNAUTHORIZED)
+
+        # Escenario 6 - Usuario sin rol técnico
+        if user.role != User.Role.TECH:
+            return Response({
+                'error': 'Sin permisos',
+                'message': 'No tiene permisos para solicitar la finalización de tickets como técnico.'
+            }, status=status.HTTP_403_FORBIDDEN)
+
+        ticket = self.get_object()
+        
+        # Escenario 5 - Ticket no existe (manejado por get_object con get_object_or_404)
+        # pero lo verificamos explícitamente para dar un mensaje claro
+        if not ticket:
+            return Response({
+                'error': 'Ticket no encontrado',
+                'message': 'El ticket especificado no fue encontrado.'
+            }, status=status.HTTP_404_NOT_FOUND)
+
+        # Escenario 3 - Ticket no asignado al técnico
+        if ticket.tecnico != user:
+            return Response({
+                'error': 'Sin permisos',
+                'message': 'El técnico no tiene permisos para solicitar la finalización de ese ticket.'
+            }, status=status.HTTP_403_FORBIDDEN)
+
+        # Validar el serializer (incluye validación de estado)
+        serializer = self.get_serializer(data=request.data, context={'ticket': ticket})
+        
+        if not serializer.is_valid():
+            # Escenario 4 - Ticket en estado no válido
+            errors = serializer.errors
+            if 'non_field_errors' in errors:
+                error_data = errors['non_field_errors'][0]
+                if isinstance(error_data, dict) and error_data.get('error') == 'Estado no válido':
+                    return Response({
+                        'error': 'Estado no válido',
+                        'message': error_data.get('message', 'El ticket no está en un estado apropiado para solicitar su finalización.')
+                    }, status=status.HTTP_400_BAD_REQUEST)
+            return Response(errors, status=status.HTTP_400_BAD_REQUEST)
+
+        # Obtener el estado "En pruebas pendiente de aprobación" (id=6)
+        try:
+            estado_pendiente_aprobacion = Estado.objects.get(codigo='trial_pending_approval')
+        except Estado.DoesNotExist:
+            return Response({
+                'error': 'Error del sistema',
+                'message': 'El estado "En pruebas pendiente de aprobación" no está configurado en el sistema.'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        # Obtener el estado "Finalizado" (id=5)
+        try:
+            estado_finalizado = Estado.objects.get(codigo='closed')
+        except Estado.DoesNotExist:
+            return Response({
+                'error': 'Error del sistema',
+                'message': 'El estado "Finalizado" no está configurado en el sistema.'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        # Escenario 1 y 2 - Solicitud exitosa
+        # Guardar el estado anterior
+        estado_anterior = ticket.estado
+        
+        # Actualizar el estado del ticket a "En pruebas pendiente de aprobación"
+        ticket.estado = estado_pendiente_aprobacion
+        ticket.save(update_fields=['estado'])
+
+        # Crear la solicitud de cambio de estado
+        reason = serializer.validated_data.get('reason', '')
+        state_request = StateChangeRequest.objects.create(
+            ticket=ticket,
+            requested_by=user,
+            from_state=estado_anterior,
+            to_state=estado_finalizado,
+            status=StateChangeRequest.Status.PENDING,
+            reason=reason
+        )
+
+        # Enviar notificación al administrador
+        try:
+            NotificationService.enviar_solicitud_cambio_estado(state_request)
+        except Exception as e:
+            # No fallar la solicitud si hay error en la notificación
+            logger = __import__('logging').getLogger(__name__)
+            logger.error(f"Error enviando notificación de solicitud de finalización: {e}")
+
+        # Preparar respuesta con información actualizada
+        ticket_serializer = TicketSerializer(ticket)
+        
+        return Response({
+            'message': 'Solicitud de finalización creada exitosamente',
+            'ticket': ticket_serializer.data,
+            'state_request': {
+                'id': state_request.id,
+                'created_at': state_request.created_at,
+                'requested_by': {
+                    'document': user.document,
+                    'email': user.email,
+                    'full_name': user.get_full_name()
+                },
+                'from_state': estado_anterior.nombre,
+                'to_state': estado_finalizado.nombre,
+                'status': state_request.status,
+                'reason': reason
+            }
         }, status=status.HTTP_200_OK)

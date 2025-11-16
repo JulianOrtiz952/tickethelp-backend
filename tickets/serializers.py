@@ -191,3 +191,42 @@ class PendingApprovalSerializer(serializers.ModelSerializer):
         fields = ['id', 'ticket', 'ticket_titulo', 'requested_by', 'requested_by_name', 
                  'from_state', 'from_state_name', 'to_state', 'to_state_name', 
                  'reason', 'created_at', 'status']
+
+
+class RequestFinalizationSerializer(serializers.Serializer):
+    """
+    Serializer para solicitar la finalización de un ticket.
+    No requiere campos adicionales, solo valida el contexto del ticket.
+    """
+    reason = serializers.CharField(max_length=500, required=False, allow_blank=True, 
+                                   help_text="Razón opcional para la solicitud de finalización")
+
+    def validate(self, attrs):
+        ticket = self.context.get('ticket')
+        if not ticket:
+            raise serializers.ValidationError("Ticket no proporcionado en el contexto")
+        
+        # Validar que el ticket no esté finalizado
+        if ticket.estado.es_final:
+            raise serializers.ValidationError({
+                "error": "Ticket ya finalizado",
+                "message": "No se puede solicitar la finalización de un ticket que ya está finalizado."
+            })
+        
+        # Validar que el ticket no esté ya en "En pruebas pendiente de aprobación"
+        if ticket.estado.codigo == 'trial_pending_approval':
+            raise serializers.ValidationError({
+                "error": "Solicitud ya realizada",
+                "message": "Este ticket ya tiene una solicitud de finalización pendiente de aprobación."
+            })
+        
+        # Validar que el ticket esté en un estado válido para solicitar finalización
+        # Los estados válidos son: "En prueba" (id=4) o estados anteriores
+        estados_validos = ['trial']  # Solo desde "En prueba" se puede solicitar finalización
+        if ticket.estado.codigo not in estados_validos:
+            raise serializers.ValidationError({
+                "error": "Estado no válido",
+                "message": f"El ticket debe estar en 'En prueba' para solicitar su finalización. Estado actual: {ticket.estado.nombre}"
+            })
+        
+        return attrs

@@ -39,6 +39,27 @@ class NotificationConfig:
             'enviar_a_tecnico': False,
             'enviar_a_admin': True,
         },
+        'solicitud_cambio_estado': {
+            'nombre': 'Solicitud de Cambio de Estado',
+            'descripcion': 'Notificación al admin cuando se solicita un cambio de estado que requiere aprobación',
+            'enviar_a_cliente': False,
+            'enviar_a_tecnico': False,
+            'enviar_a_admin': True,
+        },
+        'cambio_estado_aprobado': {
+            'nombre': 'Cambio de Estado Aprobado',
+            'descripcion': 'Notificación al técnico cuando su solicitud de cambio de estado es aprobada',
+            'enviar_a_cliente': False,
+            'enviar_a_tecnico': True,
+            'enviar_a_admin': False,
+        },
+        'cambio_estado_rechazado': {
+            'nombre': 'Cambio de Estado Rechazado',
+            'descripcion': 'Notificación al técnico cuando su solicitud de cambio de estado es rechazada',
+            'enviar_a_cliente': False,
+            'enviar_a_tecnico': True,
+            'enviar_a_admin': False,
+        },
         'ticket_finalizado': {
             'nombre': 'Ticket Finalizado',
             'descripcion': 'Notificación cuando un ticket es finalizado',

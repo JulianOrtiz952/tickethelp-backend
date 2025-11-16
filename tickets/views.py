@@ -145,27 +145,69 @@ class StateChangeAV(UpdateAPIView):
                     'message': 'Debe proporcionar user_document como parámetro de consulta'
                 }, status=status.HTTP_400_BAD_REQUEST)
 
-        # Solo el técnico asignado puede cambiar (si quieres permitir admin también, lo ajustamos)
+        # Validar que esté autenticado y sea técnico
+        if not user.is_authenticated or user.role != User.Role.TECH:
+            return Response({
+                'error': 'No autorizado',
+                'message': 'Debe iniciar sesión como técnico para cambiar el estado de un ticket.'
+            }, status=status.HTTP_403_FORBIDDEN)
+
+        # Validar que el usuario sea el técnico asignado
         if ticket.tecnico != user:
             return Response({
                 'error': 'No autorizado',
-                'message': 'Solo el técnico asignado puede cambiar el estado'
+                'message': 'Solo el técnico asignado puede solicitar cambios de estado.'
             }, status=status.HTTP_403_FORBIDDEN)
 
+        # Bloquear si ya está finalizado
+        if ticket.estado.es_final:
+            return Response({
+                'error': 'No permitido',
+                'message': 'El ticket ya está finalizado y no puede modificarse.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Bloquear si está en pruebas o pendiente de aprobación
+        if ticket.estado.codigo == "trial" or ticket.estado.codigo == "trial_pending_approval":
+            return Response({
+                'error': 'No permitido',
+                'message': 'El ticket está en pruebas o pendiente de aprobación y no puede ser modificado por el técnico.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Validar datos enviados
         serializer = self.get_serializer(data=request.data, context={'ticket': ticket})
-        serializer.is_valid(raise_exception=True)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
         to_state = serializer.validated_data['to_state']
+        reason = serializer.validated_data.get('reason', '')
 
-        # Aplicar el cambio inmediato, sin solicitudes de aprobación
+        # Estado final requiere aprobación
+        if to_state.es_final:
+            state_request = StateChangeRequest.objects.create(
+                ticket=ticket,
+                requested_by=user,
+                from_state=ticket.estado,
+                to_state=to_state,
+                reason=reason
+            )
+
+            # Notificar al administrador
+            NotificationService.enviar_solicitud_cambio_estado(state_request)
+
+            return Response({
+                'message': 'El estado final requiere validación del administrador, solicitud enviada correctamente.',
+                'request_id': state_request.id,
+                'status': 'pending_approval',
+                'to_state': to_state.nombre
+            }, status=status.HTTP_202_ACCEPTED)
+
         ticket.estado = to_state
-        ticket.save(update_fields=['estado'])
+        ticket.save()
 
         return Response({
-            'message': 'Estado actualizado correctamente',
+            'message': 'Estado actualizado correctamente.',
             'ticket_id': ticket.pk,
-            'from_state_id': to_state.id - 1,  # por regla, siempre era actual+1
-            'to_state_id': to_state.id
+            'new_state': to_state.nombre
         }, status=status.HTTP_200_OK)
 
 

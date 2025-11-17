@@ -11,7 +11,7 @@ from tickets.models import Ticket, Estado, StateChangeRequest
 from tickets.serializers import (
     TicketSerializer, EstadoSerializer, LeastBusyTechnicianSerializer,
     ChangeTechnicianSerializer, ActiveTechnicianSerializer, StateChangeSerializer,
-    StateApprovalSerializer, PendingApprovalSerializer, RequestFinalizationSerializer,
+    StateApprovalSerializer, PendingApprovalSerializer,
     TicketTimelineSerializer
 )
 from notifications.services import NotificationService
@@ -256,18 +256,18 @@ class StateChangeAV(UpdateAPIView):
         }, status=status.HTTP_200_OK)
 
 
-class StateApprovalAV(UpdateAPIView):
+class TestingApprovalAV(UpdateAPIView):
+    """
+    Vista para que el administrador apruebe o rechace las pruebas de un ticket.
+    """
     permission_classes = [IsAdmin]
     serializer_class = StateApprovalSerializer
-    
+    http_method_names = ['patch', 'post', 'options', 'head']
+
     def get_object(self):
-        request_id = self.kwargs.get('request_id')
-        try:
-            state_request = StateChangeRequest.objects.select_related('ticket', 'from_state', 'to_state').get(pk=request_id)
-            return state_request if state_request.status == StateChangeRequest.Status.PENDING else None
-        except StateChangeRequest.DoesNotExist:
-            return None
-    
+        ticket_id = self.kwargs.get('ticket_id')
+        return get_object_or_404(Ticket, pk=ticket_id)
+
     def _get_user(self, request):
         user_document = request.query_params.get('user_document')
         if user_document:
@@ -276,114 +276,101 @@ class StateApprovalAV(UpdateAPIView):
             except User.DoesNotExist:
                 return None
         return getattr(request, 'user', None)
-    
-    def put(self, request, *args, **kwargs):
-        request_id = self.kwargs.get('request_id')
-        try:
-            state_request = StateChangeRequest.objects.select_related('ticket', 'ticket__estado', 'from_state', 'to_state').get(pk=request_id)
-        except StateChangeRequest.DoesNotExist:
-            return Response({
-                'error': 'Solicitud no encontrada',
-                'message': f'No se encontró una solicitud de cambio de estado con ID {request_id}.'
-            }, status=status.HTTP_404_NOT_FOUND)
-        
-        if state_request.status != StateChangeRequest.Status.PENDING:
-            return Response({
-                'error': 'Solicitud no pendiente',
-                'message': f'La solicitud de cambio de estado (ID {request_id}) ya fue procesada. Estado actual: {state_request.get_status_display()}.'
-            }, status=status.HTTP_400_BAD_REQUEST)
-        
+
+    def _process(self, request, *args, **kwargs):
+        ticket = self.get_object()
         user = self._get_user(request)
-        if not user or not user.is_authenticated:
-            return Response({
-                'error': 'Usuario requerido',
-                'message': 'Debe proporcionar user_document como parámetro de consulta'
-            }, status=status.HTTP_400_BAD_REQUEST)
-        
-        if user.role != User.Role.ADMIN:
-            return Response({
-                'error': 'No autorizado',
-                'message': 'Solo los administradores pueden aprobar/rechazar solicitudes'
-            }, status=status.HTTP_403_FORBIDDEN)
-        
-        if state_request.ticket.estado_id == 5:
-            return Response({
-                'error': 'Ticket finalizado',
-                'message': 'No se puede aprobar un cambio de estado para un ticket finalizado. La solicitud será rechazada automáticamente.'
-            }, status=status.HTTP_400_BAD_REQUEST)
-        
+
+        if not user or not user.is_authenticated or user.role != User.Role.ADMIN:
+            return Response(
+                {
+                    "error": "No autorizado",
+                    "message": "Debe autenticarse como administrador para aprobar/rechazar pruebas."
+                },
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        # Validar que el ticket esté en estado "En pruebas pendiente de aprobación"
+        if ticket.estado.codigo != "trial_pending_approval":
+            return Response(
+                {
+                    "error": "estado_invalido",
+                    "message": "El ticket no está en estado 'En pruebas pendiente de aprobación'."
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
         serializer = self.get_serializer(data=request.data)
-        if not serializer.is_valid():
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-        
-        action = serializer.validated_data['action']
+        serializer.is_valid(raise_exception=True)
+
+        action = serializer.validated_data["action"]
+        estado_anterior = ticket.estado
         now = timezone.now()
-        
-        if action == 'approve':
-            if state_request.ticket.estado.codigo == "trial_pending_approval" and state_request.to_state.codigo == "closed":
-                try:
-                    state_request.from_state = Estado.objects.get(codigo='trial_pending_approval')
-                except Estado.DoesNotExist:
-                    pass
+
+        if action == "approve":
+            # Pasar de "En pruebas pendiente de aprobación" a "Finalizado"
+            estado_final = get_object_or_404(Estado, codigo="closed")
             
-            state_request.ticket.estado = state_request.to_state
-            state_request.ticket.save()
-            state_request.status = StateChangeRequest.Status.APPROVED
-            state_request.approved_by = user
-            state_request.approved_at = now
-            state_request.save()
+            # Crear StateChangeRequest para la timeline
+            StateChangeRequest.objects.create(
+                ticket=ticket,
+                requested_by=user,
+                from_state=estado_anterior,
+                to_state=estado_final,
+                status=StateChangeRequest.Status.APPROVED,
+                approved_by=user,
+                approved_at=now,
+                reason="Pruebas aprobadas por administrador"
+            )
             
-            NotificationService.enviar_aprobacion_cambio_estado(state_request)
-            if state_request.to_state.es_final:
-                NotificationService.enviar_ticket_cerrado(state_request.ticket, state_request)
-            
-            return Response({
-                'message': 'Cambio de estado aprobado y aplicado',
-                'ticket_id': state_request.ticket.pk,
-                'new_state': state_request.to_state.nombre
-            }, status=status.HTTP_200_OK)
+            ticket.estado = estado_final
+            ticket.save(update_fields=["estado"])
+
+            # Notificar que el ticket fue finalizado
+            NotificationService.enviar_ticket_finalizado(ticket)
+
+            return Response(
+                {
+                    "message": "Pruebas aprobadas, el ticket ha sido finalizado.",
+                    "ticket": TicketSerializer(ticket).data
+                },
+                status=status.HTTP_200_OK
+            )
+
+        # action == "reject": volver a "En reparación"
+        estado_reparacion = get_object_or_404(Estado, codigo="in_repair")
         
-        rejection_reason = serializer.validated_data.get('rejection_reason', '')
-        state_request.status = StateChangeRequest.Status.REJECTED
-        state_request.approved_by = user
-        state_request.approved_at = now
-        state_request.rejection_reason = rejection_reason
-        state_request.save()
+        # Crear StateChangeRequest para la timeline
+        StateChangeRequest.objects.create(
+            ticket=ticket,
+            requested_by=user,
+            from_state=estado_anterior,
+            to_state=estado_reparacion,
+            status=StateChangeRequest.Status.APPROVED,
+            approved_by=user,
+            approved_at=now,
+            reason="Pruebas rechazadas por administrador"
+        )
         
-        ticket = state_request.ticket
-        if ticket.estado.codigo == "trial_pending_approval":
-            try:
-                estado_reparacion = Estado.objects.get(codigo='in_repair')
-                estado_anterior = ticket.estado
-                ticket.estado = estado_reparacion
-                ticket.save(update_fields=['estado'])
-                
-                StateChangeRequest.objects.create(
-                    ticket=ticket,
-                    requested_by=state_request.requested_by,
-                    from_state=estado_anterior,
-                    to_state=estado_reparacion,
-                    status=StateChangeRequest.Status.APPROVED,
-                    approved_by=user,
-                    approved_at=now,
-                    reason=f"Rechazo de solicitud de finalización. Ticket devuelto a {estado_reparacion.nombre}."
-                )
-            except Estado.DoesNotExist:
-                logger.error("Error: El estado 'in_repair' (estado 3) no está configurado en el sistema.")
-        
-        NotificationService.enviar_rechazo_cambio_estado(state_request)
-        
-        response_data = {
-            'message': 'Solicitud de cambio de estado rechazada',
-            'ticket_id': ticket.pk,
-            'rejection_reason': rejection_reason
-        }
-        
-        if ticket.estado.codigo == "in_repair":
-            response_data['new_state'] = ticket.estado.nombre
-            response_data['message'] = 'Solicitud de cambio de estado rechazada. El ticket ha sido devuelto a "En reparación".'
-        
-        return Response(response_data, status=status.HTTP_200_OK)
+        ticket.estado = estado_reparacion
+        ticket.save(update_fields=["estado"])
+
+        # Notificar que el estado cambió de En pruebas a En reparación
+        NotificationService.enviar_notificacion_estado_cambiado(ticket, estado_anterior.nombre)
+
+        return Response(
+            {
+                "message": "Pruebas rechazadas, el ticket vuelve a reparación.",
+                "ticket": TicketSerializer(ticket).data
+            },
+            status=status.HTTP_200_OK
+        )
+
+    def patch(self, request, *args, **kwargs):
+        return self._process(request, *args, **kwargs)
+
+    def post(self, request, *args, **kwargs):
+        return self._process(request, *args, **kwargs)
 
 
 class PendingApprovalsAV(ListAPIView):
@@ -440,102 +427,6 @@ class TicketListView(ListAPIView):
             'message': 'Lista de tickets',
             'total_tickets': queryset.count(),
             'tickets': serializer.data
-        }, status=status.HTTP_200_OK)
-
-
-class RequestFinalizationAV(UpdateAPIView):
-    permission_classes = [IsTechnician]
-    serializer_class = RequestFinalizationSerializer
-    http_method_names = ['put', 'patch', 'options', 'head']
-
-    def get_object(self):
-        return get_object_or_404(Ticket, pk=self.kwargs.get('ticket_id'))
-
-    def put(self, request, *args, **kwargs):
-        user = getattr(request, 'user', None)
-        if not user or not user.is_authenticated or user.role != User.Role.TECH:
-            return Response({
-                'error': 'No autenticado',
-                'message': 'Debe autenticarse como técnico para solicitar la finalización de tickets.'
-            }, status=status.HTTP_401_UNAUTHORIZED)
-
-        ticket = self.get_object()
-        if ticket.tecnico != user:
-            return Response({
-                'error': 'Sin permisos',
-                'message': 'El técnico no tiene permisos para solicitar la finalización de ese ticket.'
-            }, status=status.HTTP_403_FORBIDDEN)
-
-        serializer = self.get_serializer(data=request.data, context={'ticket': ticket})
-        if not serializer.is_valid():
-            errors = serializer.errors
-            if 'non_field_errors' in errors:
-                error_data = errors['non_field_errors'][0]
-                if isinstance(error_data, dict) and error_data.get('error') == 'Estado no válido':
-                    return Response({
-                        'error': 'Estado no válido',
-                        'message': error_data.get('message', 'El ticket no está en un estado apropiado para solicitar su finalización.')
-                    }, status=status.HTTP_400_BAD_REQUEST)
-            return Response(errors, status=status.HTTP_400_BAD_REQUEST)
-
-        try:
-            estado_pendiente_aprobacion = Estado.objects.get(codigo='trial_pending_approval')
-            estado_finalizado = Estado.objects.get(codigo='closed')
-        except Estado.DoesNotExist as e:
-            estado_name = 'En pruebas pendiente de aprobación' if 'trial_pending_approval' in str(e) else 'Finalizado'
-            return Response({
-                'error': 'Error del sistema',
-                'message': f'El estado "{estado_name}" no está configurado en el sistema.'
-            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-        estado_anterior = ticket.estado
-        ticket.estado = estado_pendiente_aprobacion
-        ticket.save(update_fields=['estado'])
-
-        reason = serializer.validated_data.get('reason', '')
-        now = timezone.now()
-        
-        StateChangeRequest.objects.create(
-            ticket=ticket,
-            requested_by=user,
-            from_state=estado_anterior,
-            to_state=estado_pendiente_aprobacion,
-            status=StateChangeRequest.Status.APPROVED,
-            approved_by=user,
-            approved_at=now,
-            reason=reason or "Solicitud de finalización"
-        )
-
-        state_request = StateChangeRequest.objects.create(
-            ticket=ticket,
-            requested_by=user,
-            from_state=estado_anterior,
-            to_state=estado_finalizado,
-            status=StateChangeRequest.Status.PENDING,
-            reason=reason
-        )
-
-        try:
-            NotificationService.enviar_solicitud_cambio_estado(state_request)
-        except Exception as e:
-            logger.error(f"Error enviando notificación de solicitud de finalización: {e}")
-
-        return Response({
-            'message': 'Solicitud de finalización creada exitosamente',
-            'ticket': TicketSerializer(ticket).data,
-            'state_request': {
-                'id': state_request.id,
-                'created_at': state_request.created_at,
-                'requested_by': {
-                    'document': user.document,
-                    'email': user.email,
-                    'full_name': user.get_full_name()
-                },
-                'from_state': estado_anterior.nombre,
-                'to_state': estado_finalizado.nombre,
-                'status': state_request.status,
-                'reason': reason
-            }
         }, status=status.HTTP_200_OK)
 
 

@@ -1,5 +1,5 @@
 from django.urls import path
-from tickets.views import TicketAV, EstadoAV, LeastBusyTechnicianAV, ChangeTechnicianAV, ActiveTechniciansAV, StateChangeAV, StateApprovalAV, PendingApprovalsAV, TicketListView, RequestFinalizationAV
+from tickets.views import TicketAV, EstadoAV, LeastBusyTechnicianAV, ChangeTechnicianAV, ActiveTechniciansAV, StateChangeAV, StateApprovalAV, PendingApprovalsAV, TicketListView, TestingApprovalAV
 
 urlpatterns = [
     # Listar tickets y crear tickets
@@ -16,10 +16,10 @@ urlpatterns = [
     path('tickets/approve-state/<int:request_id>/', StateApprovalAV.as_view(), name="approve-state"),
     # Listar solicitudes pendientes de aprobación
     path('tickets/pending-approvals/', PendingApprovalsAV.as_view(), name="pending-approvals"),
-    # Solicitar finalización de ticket (técnico)
-    path('tickets/request-finalization/<int:ticket_id>/', RequestFinalizationAV.as_view(), name="request-finalization"),
     # Listar estados de tickets
     path('estados/', EstadoAV.as_view(), name="estado_list"),
     # Consultar los tickets asignados al técnico
     path('tickets/consulta/', TicketListView.as_view(), name="ticket-consulta"),
+    # Aprobar/rechazar estado de pruebas de un ticket (estado crítico)
+    path('tickets/testing-approval/<int:ticket_id>/', TestingApprovalAV.as_view(), name="ticket-testing-approval")
 ]

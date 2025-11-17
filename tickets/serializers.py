@@ -149,13 +149,31 @@ class StateChangeSerializer(serializers.Serializer):
                 "message": "Los tickets finalizados no pueden cambiar su estado."
             })
 
-        # Enforce avance secuencial exacto: solo actual+1
+        # Validar transiciones de estado
         current_id = ticket.estado_id
+        
+        # Permitir transiciones lineales normales (N a N+1)
         next_allowed_id = (current_id or 0) + 1
-
-        if to_state.id != next_allowed_id:
+        
+        # Permitir transición especial: de estado 4 (trial) a estado 6 (trial_pending_approval)
+        # Pero no permitir pasar directamente de 4 a 5 (closed)
+        is_valid_transition = False
+        
+        if to_state.id == next_allowed_id:
+            # Transición lineal normal
+            is_valid_transition = True
+        elif current_id == 4 and to_state.id == 6:
+            # Transición especial: de "En prueba" (4) a "En pruebas pendiente de aprobación" (6)
+            is_valid_transition = True
+        elif current_id == 4 and to_state.id == 5:
+            # Bloquear transición directa de "En prueba" (4) a "Finalizado" (5)
             raise serializers.ValidationError({
-                "to_state": f"Transición inválida. Solo se permite avanzar de {current_id} a {next_allowed_id}."
+                "to_state": "No se puede pasar directamente de 'En prueba' a 'Finalizado'. Debe pasar primero a 'En pruebas pendiente de aprobación'."
+            })
+        
+        if not is_valid_transition:
+            raise serializers.ValidationError({
+                "to_state": f"Transición inválida. Solo se permite avanzar de {current_id} a {next_allowed_id}, o de 4 a 6."
             })
 
         # (Opcional) valida que el estado esté activo si manejas 'es_activo'
@@ -230,3 +248,18 @@ class RequestFinalizationSerializer(serializers.Serializer):
             })
         
         return attrs
+
+
+class TimelineItemSerializer(serializers.Serializer):
+    """Serializer para un elemento del timeline (evento de cambio de estado)"""
+    estado_id = serializers.IntegerField()
+    estado = serializers.CharField()
+    fecha = serializers.CharField(help_text="Fecha en formato YYYY/MM/DD")
+    hora = serializers.CharField(help_text="Hora en formato HH:MM:SS")
+
+
+class TicketTimelineSerializer(serializers.Serializer):
+    """Serializer para la respuesta del timeline del ticket"""
+    ticket_id = serializers.IntegerField()
+    estado_actual = serializers.CharField()
+    timeline = TimelineItemSerializer(many=True)

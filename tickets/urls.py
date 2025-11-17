@@ -1,5 +1,5 @@
 from django.urls import path
-from tickets.views import TicketAV, EstadoAV, LeastBusyTechnicianAV, ChangeTechnicianAV, ActiveTechniciansAV, StateChangeAV, StateApprovalAV, PendingApprovalsAV, TicketListView
+from tickets.views import TicketAV, EstadoAV, LeastBusyTechnicianAV, ChangeTechnicianAV, ActiveTechniciansAV, StateChangeAV, StateApprovalAV, PendingApprovalsAV, TicketListView, TestingApprovalAV
 
 urlpatterns = [
     # Listar tickets y crear tickets
@@ -20,4 +20,6 @@ urlpatterns = [
     path('estados/', EstadoAV.as_view(), name="estado_list"),
     # Consultar los tickets asignados al técnico
     path('tickets/consulta/', TicketListView.as_view(), name="ticket-consulta"),
+    # Aprobar/rechazar estado de pruebas de un ticket (estado crítico)
+    path('tickets/testing-approval/<int:ticket_id>/', TestingApprovalAV.as_view(), name="ticket-testing-approval")
 ]

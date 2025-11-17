@@ -262,6 +262,75 @@ class StateApprovalAV(UpdateAPIView):
         
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+class TestingApprovalAV(UpdateAPIView):
+    """
+    Vista para que el administrador apruebe o rechace las pruebas de un ticket.
+    """
+    permission_classes = [IsAdmin]
+    serializer_class = StateApprovalSerializer
+    http_method_names = ['patch', 'post', 'options', 'head']
+
+    def get_object(self):
+        ticket_id = self.kwargs.get('ticket_id')
+        return get_object_or_404(Ticket, pk=ticket_id)
+
+    def _process(self, request, *args, **kwargs):
+        ticket = self.get_object()
+
+        # Validar que el ticket esté en estado "En pruebas"
+        if ticket.estado.codigo != "testing":
+            return Response(
+                {
+                    "error": "estado_invalido",
+                    "message": "El ticket no está en estado 'En pruebas' pendiente de aprobación."
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        action = serializer.validated_data["action"]
+        estado_anterior = ticket.estado.nombre
+
+        if action == "approve":
+            # Pasar de "En pruebas" a "Finalizado"
+            estado_final = get_object_or_404(Estado, codigo="closed")
+            ticket.estado = estado_final
+            ticket.save(update_fields=["estado"])
+
+            # Notificar que el ticket fue finalizado
+            NotificationService.enviar_ticket_finalizado(ticket)
+
+            return Response(
+                {
+                    "message": "Pruebas aprobadas, el ticket ha sido finalizado.",
+                    "ticket": TicketSerializer(ticket).data
+                },
+                status=status.HTTP_200_OK
+            )
+
+        # action == "reject": volver a "En reparación"
+        estado_reparacion = get_object_or_404(Estado, codigo="in_repair")
+        ticket.estado = estado_reparacion
+        ticket.save(update_fields=["estado"])
+
+        # Notificar que el estado cambió de En pruebas a En reparación
+        NotificationService.enviar_notificacion_estado_cambiado(ticket, estado_anterior)
+
+        return Response(
+            {
+                "message": "Pruebas rechazadas, el ticket vuelve a reparación.",
+                "ticket": TicketSerializer(ticket).data
+            },
+            status=status.HTTP_200_OK
+        )
+
+    def patch(self, request, *args, **kwargs):
+        return self._process(request, *args, **kwargs)
+
+    def post(self, request, *args, **kwargs):
+        return self._process(request, *args, **kwargs)
 
 class PendingApprovalsAV(ListAPIView):
     permission_classes = [IsAdmin]

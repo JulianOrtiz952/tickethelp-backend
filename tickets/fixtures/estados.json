@@ -33,20 +33,29 @@
     "model": "tickets.estado",
     "pk": 4,
     "fields": {
-      "codigo": "trial",
-      "nombre": "En prueba",
-      "es_activo": true,
-      "es_final": false
+      "codigo": "closed",
+      "nombre": "Finalizado",
+      "es_activo": false,
+      "es_final": true
     }
   },
   {
     "model": "tickets.estado",
     "pk": 5,
     "fields": {
-      "codigo": "closed",
-      "nombre": "finalizado",
+      "codigo": "canceled",
+      "nombre": "Cancelado",
       "es_activo": false,
       "es_final": true
     }
+  },
+  {
+  "model": "tickets.estado",
+  "pk": 6,
+  "fields": {
+    "codigo": "testing",
+    "nombre": "En pruebas",
+    "es_activo": true,
+    "es_final": false}
   }
 ]

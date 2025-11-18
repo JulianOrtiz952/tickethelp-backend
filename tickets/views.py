@@ -1,7 +1,7 @@
 from rest_framework.generics import ListCreateAPIView, RetrieveAPIView, UpdateAPIView, ListAPIView
 from rest_framework import status
 from rest_framework.response import Response
-from tickets.permissions import IsAdmin, IsAdminOrTechnician, IsClient, IsTechnician, IsAdminOrTechnicianOrClient
+from tickets.permissions import IsAdmin, IsAdminOrTechnician, IsClient, IsTechnician, IsAdminOrTechnicianOrClient, IsAuthenticated
 from django.shortcuts import get_object_or_404
 from django.contrib.auth import get_user_model
 from django.utils import timezone
@@ -394,7 +394,7 @@ class PendingApprovalsAV(ListAPIView):
 
 class TicketListView(ListAPIView):
     serializer_class = TicketSerializer
-    permission_classes = [IsAdminOrTechnicianOrClient]
+    permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
         # Para clientes, usar siempre el usuario autenticado por seguridad

@@ -1,7 +1,7 @@
 from rest_framework.generics import ListCreateAPIView, RetrieveAPIView, UpdateAPIView, ListAPIView
 from rest_framework import status
 from rest_framework.response import Response
-from tickets.permissions import IsAdmin, IsAdminOrTechnician, IsClient, IsTechnician
+from tickets.permissions import IsAdmin, IsAdminOrTechnician, IsClient, IsTechnician, IsAdminOrTechnicianOrClient
 from django.shortcuts import get_object_or_404
 from django.contrib.auth import get_user_model
 from django.utils import timezone
@@ -394,16 +394,24 @@ class PendingApprovalsAV(ListAPIView):
 
 class TicketListView(ListAPIView):
     serializer_class = TicketSerializer
+    permission_classes = [IsAdminOrTechnicianOrClient]
 
     def get_queryset(self):
+        # Para clientes, usar siempre el usuario autenticado por seguridad
+        if self.request.user.role == User.Role.CLIENT:
+            return Ticket.objects.filter(cliente=self.request.user)
+        
+        # Para admin y técnico, permitir consultar por user_document o usar el usuario autenticado
         user_document = self.request.query_params.get('user_document')
-        if not user_document or not user_document.strip():
-            return Ticket.objects.none()
-
-        try:
-            user = User.objects.get(document=user_document)
-        except User.DoesNotExist:
-            return Ticket.objects.none()
+        
+        if user_document and user_document.strip():
+            try:
+                user = User.objects.get(document=user_document)
+            except User.DoesNotExist:
+                return Ticket.objects.none()
+        else:
+            # Si no se proporciona user_document, usar el usuario autenticado
+            user = self.request.user
 
         if user.role == User.Role.TECH:
             return Ticket.objects.filter(tecnico=user)

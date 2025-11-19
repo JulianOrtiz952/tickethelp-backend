@@ -166,3 +166,11 @@ class TTATotalSerializer(serializers.Serializer):
     tta_horas = serializers.FloatField()
     tta_dias = serializers.FloatField()
     estados_sumados = serializers.IntegerField()
+
+class TechnicianPerformanceSerializer(serializers.Serializer):
+    total_assigned = serializers.IntegerField()
+    total_resolved = serializers.IntegerField()
+    avg_resolution_days = serializers.IntegerField()
+    avg_resolution_hours = serializers.IntegerField()
+    state_times = serializers.ListField(child=serializers.DictField())
+    top_tickets = serializers.ListField(child=serializers.DictField())

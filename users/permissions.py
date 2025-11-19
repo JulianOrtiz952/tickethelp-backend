@@ -1,5 +1,6 @@
 from rest_framework import permissions
 from django.contrib.auth import get_user_model
+from rest_framework.permissions import BasePermission
 
 User = get_user_model()
 
@@ -83,3 +84,13 @@ class IsAuthenticated(permissions.IsAuthenticated):
     Permiso básico de autenticación.
     """
     pass
+
+# =============================================================================
+# HU13B - Historial: Permiso para verificar que el usuario sea administrador
+# =============================================================================
+# Este permiso verifica que el usuario sea administrador
+# =============================================================================
+
+class IsAdmin(BasePermission):
+    def has_permission(self, request, view):
+        return request.user.is_authenticated and request.user.role == User.Role.ADMIN

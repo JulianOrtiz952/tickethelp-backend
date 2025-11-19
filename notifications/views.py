@@ -57,10 +57,12 @@ def notification_detail(request, notification_id):
     )
 
     user = request.user
-    # Permitir acceso solo si es el destinatario principal o administrador
+    # Permitir acceso si es el dueño, destinatario o administrador
     allowed = (
         getattr(user, 'role', None) == getattr(User.Role, 'ADMIN', 'ADMIN') or
-        notification.usuario == user
+        notification.usuario == user or
+        notification.enviado_por == user or
+        notification.destinatarios.filter(pk=user.pk).exists()
     )
 
     if not allowed:
@@ -110,8 +112,9 @@ class UserNotificationsAV(ListAPIView):
     
     def get_queryset(self):
         user = self.request.user
-        # Solo mostrar notificaciones donde el usuario es el destinatario principal
-        return Notification.objects.filter(usuario=user).select_related('tipo', 'ticket', 'enviado_por').order_by('-fecha_creacion')
+        return Notification.objects.filter(
+            Q(usuario=user) | Q(destinatarios=user)
+        ).select_related('tipo', 'ticket', 'enviado_por').order_by('-fecha_creacion').distinct()
     
     def list(self, request, *args, **kwargs):
         queryset = self.get_queryset()

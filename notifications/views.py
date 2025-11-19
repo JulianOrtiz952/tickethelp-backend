@@ -22,9 +22,8 @@ User = get_user_model()
 def notification_list(request):
     user = request.user
 
-    queryset = Notification.objects.filter(
-        Q(usuario=user) | Q(destinatarios=user)
-    ).select_related('tipo', 'ticket', 'enviado_por').order_by('-fecha_creacion').distinct()
+    # Solo mostrar notificaciones donde el usuario es el destinatario principal
+    queryset = Notification.objects.filter(usuario=user).select_related('tipo', 'ticket', 'enviado_por').order_by('-fecha_creacion')
 
     estado = request.query_params.get('estado')
     if estado:
@@ -85,6 +84,7 @@ def notification_detail(request, notification_id):
 @permission_classes([IsAuthenticated])
 def notification_stats(request):
     user = request.user
+    # Solo contar notificaciones donde el usuario es el destinatario principal
     stats = Notification.objects.filter(usuario=user).aggregate(
         total=Count('id'),
         pendientes=Count('id', filter=Q(estado=Notification.Estado.PENDIENTE)),
@@ -160,9 +160,7 @@ class NotificationMarkAsReadAV(UpdateAPIView):
         
         # Buscar notificación que pertenezca al usuario
         return get_object_or_404(
-            Notification.objects.filter(
-                Q(usuario=user) | Q(destinatarios=user)
-            ),
+            Notification.objects.filter(usuario=user),
             pk=notification_id
         )
     

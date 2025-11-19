@@ -116,3 +116,14 @@ class IsAuthenticated(permissions.IsAuthenticated):
     Permiso básico de autenticación.
     """
     pass
+
+class IsAdminOrTechnicianOrClient(permissions.BasePermission):
+    """
+    Permiso personalizado para verificar que el usuario sea administrador, técnico o cliente.
+    """
+    def has_permission(self, request, view):
+        return (
+            request.user and 
+            request.user.is_authenticated and 
+            request.user.role in [User.Role.ADMIN, User.Role.TECH, User.Role.CLIENT]
+        )

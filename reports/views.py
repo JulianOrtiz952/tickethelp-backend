@@ -9,8 +9,10 @@ from django.db.models import Count, Q, Avg, F, OuterRef, Subquery, ExpressionWra
 from django.db.models.functions import TruncMonth, Coalesce, Now, Cast, Lag
 from django.db.models.functions.datetime import ExtractHour, ExtractWeekDay
 from tickets.models import Ticket, StateChangeRequest, Estado
-from tickets.permissions import IsAdmin
+from tickets.permissions import IsAdmin, IsTechnician
 from django.db.models.expressions import Window
+from tickets.permissions import IsAdmin, IsAuthenticated    
+
 
 from .serializers import (
     GeneralStatsSerializer,
@@ -1034,3 +1036,184 @@ class ActiveClientsMonthlyComparisonView(APIView):
                 {"detail": "Error calculando comparación de clientes únicos", "error": str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+
+class TechnicianPerformanceView(APIView):
+    """
+    Vista para obtener el panel de rendimiento de un técnico.
+    Solo accesible para usuarios con rol técnico.
+    
+    Retorna:
+    - Tiempos promedio entre estados relevantes
+    - Duración promedio de resolución
+    - Total de tickets asignados y resueltos
+    - Top 3 tickets resueltos en menor tiempo
+    """
+    permission_classes = [IsAuthenticated]
+    
+    FINAL_STATE_ID = 5  # Estado "Finalizado"
+    TRIAL_STATE_IDS = [4, 6]  # Estados de prueba que no se cuentan en tiempos
+
+    def get(self, request, *args, **kwargs):
+        # Obtener el técnico actual
+        technician = request.user
+
+        # Validar que sea técnico (el permiso IsAuthenticated ya valida autenticación)
+        if technician.role != User.Role.TECH:
+            return Response(
+                {'error': 'No autorizado', 'message': 'Debe ser un técnico para acceder a estas estadísticas.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        # Total de tickets asignados al técnico
+        total_assigned = Ticket.objects.filter(tecnico=technician).count()
+
+        # Total de tickets resueltos (estado final)
+        total_resolved = Ticket.objects.filter(tecnico=technician, estado_id=self.FINAL_STATE_ID).count()
+
+        # Calcular duración promedio de resolución
+        # Usar approved_at de la primera solicitud aprobada hacia estado final, o actualizado_en como respaldo
+        first_approved_subq = (
+            StateChangeRequest.objects
+            .filter(
+                ticket=OuterRef('pk'),
+                to_state_id=self.FINAL_STATE_ID,
+                status=StateChangeRequest.Status.APPROVED,
+            )
+            .order_by('approved_at')
+            .values('approved_at')[:1]
+        )
+
+        resolved_tickets = (
+            Ticket.objects
+            .filter(tecnico=technician, estado_id=self.FINAL_STATE_ID)
+            .annotate(
+                resolved_at=Subquery(first_approved_subq),
+                resolved_at_final=Coalesce(F('resolved_at'), F('actualizado_en'))
+            )
+            .annotate(
+                duration=ExpressionWrapper(
+                    F('resolved_at_final') - F('creado_en'),
+                    output_field=DurationField()
+                )
+            )
+        )
+
+        avg_resolution_agg = resolved_tickets.aggregate(avg_duration=Avg('duration'))
+        avg_resolution_time = avg_resolution_agg['avg_duration']
+
+        # Convertir duración promedio a días y horas
+        if avg_resolution_time and total_resolved > 0:
+            avg_seconds = avg_resolution_time.total_seconds()
+            avg_resolution_days = round(avg_seconds / 86400.0, 2)
+            avg_resolution_hours = round(avg_seconds / 3600.0, 2)
+        else:
+            avg_resolution_days = 0.0
+            avg_resolution_hours = 0.0
+
+        # Calcular tiempos promedio entre estados relevantes
+        # Excluir estados de prueba (4 y 6) del cálculo
+        # Incluir transiciones aprobadas y rechazadas (según criterio: rechazos se toman en cuenta)
+        state_transitions = (
+            StateChangeRequest.objects
+            .filter(
+                ticket__tecnico=technician,
+                status__in=[StateChangeRequest.Status.APPROVED, StateChangeRequest.Status.REJECTED]
+            )
+            .exclude(from_state_id__in=self.TRIAL_STATE_IDS)  # Excluir fase de pruebas
+            .exclude(to_state_id__in=self.TRIAL_STATE_IDS)    # Excluir fase de pruebas
+            .select_related('from_state', 'to_state', 'ticket')
+            .order_by('ticket_id', 'created_at')
+        )
+
+        # Agrupar transiciones por par de estados (from_state -> to_state)
+        transition_times = defaultdict(list)
+        
+        # Agrupar por ticket para calcular tiempos entre transiciones
+        ticket_transitions = defaultdict(list)
+        for transition in state_transitions:
+            ticket_transitions[transition.ticket_id].append(transition)
+        
+        # Calcular tiempos entre estados para cada ticket
+        for ticket_id, transitions in ticket_transitions.items():
+            # Ordenar por fecha (approved_at para aprobadas, created_at para rechazadas)
+            transitions.sort(key=lambda x: x.approved_at if x.approved_at else x.created_at)
+            
+            # Obtener fecha de creación del ticket
+            try:
+                ticket = Ticket.objects.only('creado_en').get(pk=ticket_id)
+                prev_time = ticket.creado_en
+            except Ticket.DoesNotExist:
+                continue
+            
+            # Calcular tiempo entre cada transición
+            for i, transition in enumerate(transitions):
+                # Usar approved_at si existe, sino created_at (para rechazadas)
+                transition_time = transition.approved_at if transition.approved_at else transition.created_at
+                
+                if transition_time and prev_time:
+                    # Tiempo desde la transición anterior (o creación) hasta esta transición
+                    delta = transition_time - prev_time
+                    if delta.total_seconds() > 0:
+                        # Clave: from_state -> to_state
+                        transition_key = f"{transition.from_state.codigo} -> {transition.to_state.codigo}"
+                        transition_times[transition_key].append(delta.total_seconds())
+                
+                # Actualizar prev_time para la siguiente iteración
+                prev_time = transition_time
+
+        # Calcular promedios por transición
+        avg_state_times = []
+        for transition_key, times in transition_times.items():
+            if times:
+                avg_seconds = sum(times) / len(times)
+                avg_state_times.append({
+                    'transicion': transition_key,
+                    'promedio_segundos': round(avg_seconds, 2),
+                    'promedio_horas': round(avg_seconds / 3600.0, 2),
+                    'promedio_dias': round(avg_seconds / 86400.0, 2),
+                    'muestras': len(times)
+                })
+
+        # Top 3 tickets más rápidos (menor duración de resolución)
+        top_tickets_list = []
+        if total_resolved > 0:
+            # Evaluar el queryset y ordenar por duración
+            try:
+                top_tickets_qs = list(
+                    resolved_tickets
+                    .select_related('estado')
+                    .order_by('duration')[:3]
+                )
+                
+                # Ordenar manualmente por duración para asegurar el orden correcto
+                top_tickets_qs.sort(key=lambda t: (t.resolved_at_final - t.creado_en).total_seconds())
+                
+                for ticket in top_tickets_qs[:3]:  # Asegurar máximo 3
+                    duration_seconds = (ticket.resolved_at_final - ticket.creado_en).total_seconds()
+                    if duration_seconds >= 0:  # Solo incluir si la duración es válida
+                        top_tickets_list.append({
+                            'ticket_id': ticket.id,
+                            'equipo': ticket.equipo or '',
+                            'duracion_total_segundos': round(duration_seconds, 2),
+                            'duracion_total_horas': round(duration_seconds / 3600.0, 2),
+                            'duracion_total_dias': round(duration_seconds / 86400.0, 2)
+                        })
+            except Exception as e:
+                # Si hay algún error, dejar la lista vacía pero no fallar
+                print(f"Error al obtener top tickets: {str(e)}")
+                top_tickets_list = []
+
+        # Construir respuesta
+        performance_data = {
+            'tiempos_promedio_entre_estados': avg_state_times,
+            'duracion_promedio_resolucion': {
+                'promedio_dias': avg_resolution_days,
+                'promedio_horas': avg_resolution_hours
+            },
+            'total_tickets_asignados': total_assigned,
+            'total_tickets_resueltos': total_resolved,
+            'top_tres_tickets_rapidos': top_tickets_list
+        }
+
+        return Response(performance_data, status=status.HTTP_200_OK)

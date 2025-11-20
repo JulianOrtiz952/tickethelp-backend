@@ -140,19 +140,34 @@ class NotificationService:
         }
         
         try:
+            # Optimización: Pre-cargar relaciones y cachear valores
+            ticket = state_request.ticket
+            ticket_pk = ticket.pk
+            from_state_nombre = state_request.from_state.nombre
+            to_state_nombre = state_request.to_state.nombre
+            reason = state_request.reason or "Sin razón especificada"
+            
+            # Cachear nombre del técnico
+            tecnico_nombre = 'Sistema'
+            if state_request.requested_by:
+                tecnico_nombre = state_request.requested_by.get_full_name()
+            
+            # Obtener todos los administradores activos
             administradores = User.objects.filter(role=User.Role.ADMIN, is_active=True)
             
             for admin in administradores:
                 cls._enviar_notificacion_admin(
-                    state_request.ticket, 'solicitud_cambio_estado',
+                    ticket, 'solicitud_cambio_estado',
                     'Solicitud de cambio de estado',
-                    f'El técnico {state_request.requested_by.get_full_name()} solicita cambiar el estado del ticket #{state_request.ticket.pk} de "{state_request.from_state.nombre}" a "{state_request.to_state.nombre}".',
+                    f'El técnico {tecnico_nombre} solicita cambiar el estado del ticket #{ticket_pk} de "{from_state_nombre}" a "{to_state_nombre}". Razón: {reason}',
                     resultados,
+                    usuario_destino=admin,
                     datos_adicionales={
                         'state_request_id': state_request.id,
-                        'from_state': state_request.from_state.nombre,
-                        'to_state': state_request.to_state.nombre,
-                        'reason': state_request.reason
+                        'from_state': from_state_nombre,
+                        'to_state': to_state_nombre,
+                        'reason': reason,
+                        'requested_by': tecnico_nombre
                     }
                 )
                 

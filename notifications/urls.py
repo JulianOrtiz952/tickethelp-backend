@@ -21,4 +21,7 @@ urlpatterns = [
     
     # Marcar notificación como leída
     path('<int:notification_id>/mark-read/', views.NotificationMarkAsReadAV.as_view(), name='notification-mark-read'),
+    
+    # Notificaciones específicas para clientes
+    path('client/', views.ClientNotificationsAV.as_view(), name='client-notifications'),
 ]

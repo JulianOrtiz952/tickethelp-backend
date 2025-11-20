@@ -13,6 +13,7 @@ from .serializers import (
     NotificationSerializer, NotificationListSerializer,
     NotificationStatsSerializer, NotificationTypeSerializer, NotificationUpdateSerializer
 )
+from tickets.permissions import IsClient
 
 User = get_user_model()
 
@@ -177,4 +178,66 @@ class NotificationMarkAsReadAV(UpdateAPIView):
             }, status=status.HTTP_200_OK)
         
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class ClientNotificationsAV(ListAPIView):
+    """Endpoint específico para que los clientes consulten sus notificaciones."""
+    serializer_class = NotificationListSerializer
+    permission_classes = [IsClient]
+    
+    def get_queryset(self):
+        user = self.request.user
+        
+        # Obtener usuario por user_document si se proporciona (para compatibilidad)
+        user_document = self.request.query_params.get('user_document')
+        if user_document:
+            try:
+                user = User.objects.only('id', 'email', 'role').get(document=user_document, role=User.Role.CLIENT)
+            except User.DoesNotExist:
+                return Notification.objects.none()
+        
+        # Optimización: usar Q objects con OR para mejor rendimiento y optimizar con select_related/prefetch_related
+        # Esto es más eficiente que usar union y permite usar select_related/prefetch_related
+        queryset = Notification.objects.filter(
+            Q(usuario=user) | Q(destinatarios=user)
+        ).select_related(
+            'tipo', 'ticket', 'enviado_por', 'usuario'
+        ).prefetch_related('destinatarios').order_by('-fecha_creacion').distinct()
+        
+        return queryset
+    
+    def list(self, request, *args, **kwargs):
+        queryset = self.get_queryset()
+        
+        # Aplicar filtros opcionales (antes de paginación para mejor rendimiento)
+        estado = request.query_params.get('estado')
+        if estado:
+            queryset = queryset.filter(estado=estado)
+        
+        tipo = request.query_params.get('tipo')
+        if tipo:
+            queryset = queryset.filter(tipo__codigo=tipo)
+        
+        leidas = request.query_params.get('leidas')
+        if leidas is not None:
+            if leidas.lower() == 'true':
+                queryset = queryset.filter(estado=Notification.Estado.LEIDA)
+            elif leidas.lower() == 'false':
+                queryset = queryset.exclude(estado=Notification.Estado.LEIDA)
+        
+        # Cachear el count antes de paginar (más eficiente)
+        total_count = queryset.count()
+        
+        # Paginación
+        limit = min(int(request.query_params.get('limit', 20)), 100)
+        offset = int(request.query_params.get('offset', 0))
+        
+        notifications = queryset[offset:offset + limit]
+        serializer = self.get_serializer(notifications, many=True)
+        
+        return Response({
+            'message': 'Notificaciones del cliente',
+            'total_notifications': total_count,
+            'notifications': serializer.data
+        }, status=status.HTTP_200_OK)
 

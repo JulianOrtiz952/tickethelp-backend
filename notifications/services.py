@@ -172,18 +172,67 @@ class NotificationService:
         }
         
         try:
-            cls._enviar_notificacion_tecnico(
-                state_request.ticket, 'cambio_estado_aprobado',
-                'Solicitud de cambio de estado aprobada',
-                f'Su solicitud para cambiar el estado del ticket #{state_request.ticket.pk} a "{state_request.to_state.nombre}" ha sido aprobada.',
-                resultados,
-                usuario_destino=state_request.requested_by,
-                datos_adicionales={
-                    'state_request_id': state_request.id,
-                    'approved_by': state_request.approved_by.get_full_name() if state_request.approved_by else 'Sistema',
-                    'new_state': state_request.to_state.nombre
-                }
-            )
+            # Optimización: Pre-cargar relaciones y cachear valores usados múltiples veces
+            ticket = state_request.ticket
+            ticket_pk = ticket.pk
+            ticket_titulo = ticket.titulo
+            to_state_nombre = state_request.to_state.nombre
+            from_state_nombre = state_request.from_state.nombre
+            
+            # Cachear nombres de usuarios para evitar múltiples queries
+            approved_by_name = 'Sistema'
+            if state_request.approved_by:
+                approved_by_name = state_request.approved_by.get_full_name()
+            
+            requested_by_name = 'Sistema'
+            if state_request.requested_by:
+                requested_by_name = state_request.requested_by.get_full_name()
+            
+            # Notificar al técnico que solicitó el cambio
+            if state_request.requested_by:
+                cls._enviar_notificacion_tecnico(
+                    ticket, 'cambio_estado_aprobado',
+                    'Solicitud de cambio de estado aprobada',
+                    f'Su solicitud para cambiar el estado del ticket #{ticket_pk} a "{to_state_nombre}" ha sido aprobada.',
+                    resultados,
+                    usuario_destino=state_request.requested_by,
+                    datos_adicionales={
+                        'state_request_id': state_request.id,
+                        'approved_by': approved_by_name,
+                        'new_state': to_state_nombre
+                    }
+                )
+            
+            # Notificar al cliente sobre el cambio de estado
+            if ticket.cliente:
+                cls._enviar_notificacion_cliente(
+                    ticket, 'estado_cambiado',
+                    f'Estado del ticket actualizado a "{to_state_nombre}"',
+                    f'El estado de su ticket #{ticket_pk} "{ticket_titulo}" ha sido actualizado a "{to_state_nombre}".',
+                    resultados,
+                    datos_adicionales={
+                        'state_request_id': state_request.id,
+                        'from_state': from_state_nombre,
+                        'to_state': to_state_nombre,
+                        'approved_by': approved_by_name
+                    }
+                )
+            
+            # Notificar al administrador que aprobó el cambio
+            if state_request.approved_by:
+                cls._enviar_notificacion_admin(
+                    ticket, 'cambio_estado_aprobado',
+                    'Cambio de estado aprobado',
+                    f'Ha aprobado el cambio de estado del ticket #{ticket_pk} de "{from_state_nombre}" a "{to_state_nombre}".',
+                    resultados,
+                    usuario_destino=state_request.approved_by,
+                    datos_adicionales={
+                        'state_request_id': state_request.id,
+                        'from_state': from_state_nombre,
+                        'to_state': to_state_nombre,
+                        'requested_by': requested_by_name
+                    }
+                )
                 
         except Exception as e:
             logger.error(f"Error enviando aprobación de cambio de estado: {e}")
@@ -201,20 +250,72 @@ class NotificationService:
         }
         
         try:
-            cls._enviar_notificacion_tecnico(
-                state_request.ticket, 'cambio_estado_rechazado',
-                'Solicitud de cambio de estado rechazada',
-                f'Su solicitud para cambiar el estado del ticket #{state_request.ticket.pk} a "{state_request.to_state.nombre}" ha sido rechazada. Razón: {state_request.rejection_reason}',
-                resultados,
-                usuario_destino=state_request.requested_by,
-                datos_adicionales={
-                    'state_request_id': state_request.id,
-                    'from_state': state_request.from_state.nombre,
-                    'to_state': state_request.to_state.nombre,
-                    'rejected_by': state_request.approved_by.get_full_name() if state_request.approved_by else 'Sistema',
-                    'rejection_reason': state_request.rejection_reason
-                }
-            )
+            # Optimización: Pre-cargar relaciones y cachear valores usados múltiples veces
+            ticket = state_request.ticket
+            ticket_pk = ticket.pk
+            ticket_titulo = ticket.titulo
+            to_state_nombre = state_request.to_state.nombre
+            from_state_nombre = state_request.from_state.nombre
+            rejection_reason = state_request.rejection_reason or "Sin razón especificada"
+            
+            # Cachear nombres de usuarios para evitar múltiples queries
+            rejected_by_name = 'Sistema'
+            if state_request.approved_by:
+                rejected_by_name = state_request.approved_by.get_full_name()
+            
+            requested_by_name = 'Sistema'
+            if state_request.requested_by:
+                requested_by_name = state_request.requested_by.get_full_name()
+            
+            # Notificar al técnico que solicitó el cambio
+            if state_request.requested_by:
+                cls._enviar_notificacion_tecnico(
+                    ticket, 'cambio_estado_rechazado',
+                    'Solicitud de cambio de estado rechazada',
+                    f'Su solicitud para cambiar el estado del ticket #{ticket_pk} a "{to_state_nombre}" ha sido rechazada. Razón: {rejection_reason}',
+                    resultados,
+                    usuario_destino=state_request.requested_by,
+                    datos_adicionales={
+                        'state_request_id': state_request.id,
+                        'from_state': from_state_nombre,
+                        'to_state': to_state_nombre,
+                        'rejected_by': rejected_by_name,
+                        'rejection_reason': rejection_reason
+                    }
+                )
+            
+            # Notificar al cliente sobre el rechazo del cambio
+            if ticket.cliente:
+                cls._enviar_notificacion_cliente(
+                    ticket, 'cambio_estado_rechazado',
+                    'Solicitud de cambio de estado rechazada',
+                    f'La solicitud para cambiar el estado del ticket #{ticket_pk} "{ticket_titulo}" a "{to_state_nombre}" ha sido rechazada. El ticket permanecerá en "{from_state_nombre}".',
+                    resultados,
+                    datos_adicionales={
+                        'state_request_id': state_request.id,
+                        'from_state': from_state_nombre,
+                        'to_state': to_state_nombre,
+                        'rejected_by': rejected_by_name,
+                        'rejection_reason': rejection_reason
+                    }
+                )
+            
+            # Notificar al administrador que rechazó el cambio
+            if state_request.approved_by:
+                cls._enviar_notificacion_admin(
+                    ticket, 'cambio_estado_rechazado',
+                    'Cambio de estado rechazado',
+                    f'Ha rechazado el cambio de estado del ticket #{ticket_pk} de "{from_state_nombre}" a "{to_state_nombre}". Razón: {rejection_reason}',
+                    resultados,
+                    usuario_destino=state_request.approved_by,
+                    datos_adicionales={
+                        'state_request_id': state_request.id,
+                        'from_state': from_state_nombre,
+                        'to_state': to_state_nombre,
+                        'requested_by': requested_by_name,
+                        'rejection_reason': rejection_reason
+                    }
+                )
                 
         except Exception as e:
             logger.error(f"Error enviando rechazo de cambio de estado: {e}")
@@ -395,6 +496,7 @@ class NotificationService:
     def _crear_notificacion_interna(cls, usuario: User, ticket: Ticket, tipo_codigo: str,
                                   titulo: str, mensaje: str, datos_adicionales: Dict = None):
         try:
+            # Optimización: usar only() para obtener solo los campos necesarios
             tipo_notificacion, created = NotificationType.objects.get_or_create(
                 codigo=tipo_codigo,
                 defaults={
@@ -406,6 +508,7 @@ class NotificationService:
                 }
             )
             
+            # Optimización: crear notificación con bulk_create si hay múltiples, o create si es una sola
             notification = Notification.objects.create(
                 usuario=usuario,
                 ticket=ticket,

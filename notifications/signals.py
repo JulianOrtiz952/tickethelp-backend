@@ -42,6 +42,11 @@ def ticket_state_change_notification(sender, instance, **kwargs):
     """
     if instance.pk:  # Solo para tickets existentes
         try:
+            # Verificar si ya se notificó manualmente (evitar duplicación)
+            if getattr(instance, '_notificacion_manual', False):
+                logger.info(f"Notificación manual ya enviada para ticket #{instance.pk}, saltando signal")
+                return
+            
             # Obtener el estado anterior
             estado_anterior = Ticket.objects.get(pk=instance.pk).estado.nombre
             

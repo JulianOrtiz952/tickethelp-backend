@@ -273,8 +273,18 @@ class StateChangeAV(UpdateAPIView):
                 }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
             
             estado_anterior = ticket.estado
+            estado_anterior_nombre = estado_anterior.nombre
+            # Marcar que ya se notificó manualmente para evitar duplicación con el signal
+            ticket._notificacion_manual = True
             ticket.estado = to_state
             ticket.save(update_fields=['estado'])
+            
+            # Notificar al cliente sobre el cambio de estado
+            # (El signal también lo hará, pero con la bandera evitamos duplicación)
+            try:
+                NotificationService.enviar_notificacion_estado_cambiado(ticket, estado_anterior_nombre)
+            except Exception as e:
+                logger.error(f"Error enviando notificación de cambio de estado al cliente: {e}")
             
             # Crear StateChangeRequest aprobado para el cambio al estado 4
             StateChangeRequest.objects.create(
@@ -298,6 +308,7 @@ class StateChangeAV(UpdateAPIView):
                 reason=reason or "Solicitud de finalización desde estado en pruebas"
             )
             
+            # Notificar al administrador sobre la solicitud de finalización
             try:
                 NotificationService.enviar_solicitud_cambio_estado(state_request)
             except Exception as e:

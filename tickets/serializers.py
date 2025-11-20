@@ -156,25 +156,22 @@ class StateChangeSerializer(serializers.Serializer):
         # Permitir transiciones lineales normales (N a N+1)
         next_allowed_id = (current_id or 0) + 1
         
-        # Permitir transición especial: de estado 4 (trial) a estado 6 (trial_pending_approval)
-        # Pero no permitir pasar directamente de 4 a 5 (closed)
+        # Validar transición
         is_valid_transition = False
         
         if to_state.id == next_allowed_id:
             # Transición lineal normal
             is_valid_transition = True
-        elif current_id == 4 and to_state.id == 6:
-            # Transición especial: de "En prueba" (4) a "En pruebas pendiente de aprobación" (6)
-            is_valid_transition = True
         elif current_id == 4 and to_state.id == 5:
             # Bloquear transición directa de "En prueba" (4) a "Finalizado" (5)
+            # El cambio a estado 4 automáticamente crea una solicitud de finalización
             raise serializers.ValidationError({
-                "to_state": "No se puede pasar directamente de 'En prueba' a 'Finalizado'. Debe pasar primero a 'En pruebas pendiente de aprobación'."
+                "to_state": "No se puede pasar directamente de 'En prueba' a 'Finalizado'. El cambio a 'En prueba' crea automáticamente una solicitud de finalización que debe ser aprobada por el administrador."
             })
         
         if not is_valid_transition:
             raise serializers.ValidationError({
-                "to_state": f"Transición inválida. Solo se permite avanzar de {current_id} a {next_allowed_id}, o de 4 a 6."
+                "to_state": f"Transición inválida. Solo se permite avanzar de {current_id} a {next_allowed_id}."
             })
 
         # (Opcional) valida que el estado esté activo si manejas 'es_activo'
@@ -251,12 +248,20 @@ class RequestFinalizationSerializer(serializers.Serializer):
                 "message": "No se puede solicitar la finalización de un ticket que ya está finalizado."
             })
         
-        # Validar que el ticket no esté ya en "En pruebas pendiente de aprobación"
-        if ticket.estado.codigo == 'trial_pending_approval':
-            raise serializers.ValidationError({
-                "error": "Solicitud ya realizada",
-                "message": "Este ticket ya tiene una solicitud de finalización pendiente de aprobación."
-            })
+        # Validar que el ticket no esté ya en "En prueba" (que tiene una solicitud pendiente)
+        if ticket.estado.codigo == 'trial':
+            # Verificar si ya hay una solicitud pendiente de finalización
+            pending_request = StateChangeRequest.objects.filter(
+                ticket=ticket,
+                status=StateChangeRequest.Status.PENDING,
+                from_state__codigo='trial',
+                to_state__codigo='closed'
+            ).exists()
+            if pending_request:
+                raise serializers.ValidationError({
+                    "error": "Solicitud ya realizada",
+                    "message": "Este ticket ya tiene una solicitud de finalización pendiente de aprobación."
+                })
         
         # Validar que el ticket esté en un estado válido para solicitar finalización
         # Los estados válidos son: "En prueba" (id=4) o estados anteriores

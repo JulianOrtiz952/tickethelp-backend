@@ -238,12 +238,20 @@ class StateChangeAV(UpdateAPIView):
                 'message': 'El ticket ya está finalizado y no puede modificarse.'
             }, status=status.HTTP_400_BAD_REQUEST)
 
-        # Validar que el ticket no esté pendiente de aprobación
-        if ticket.estado.codigo == "trial_pending_approval":
-            return Response({
-                'error': 'No permitido',
-                'message': 'El ticket está pendiente de aprobación y no puede ser modificado por el técnico.'
-            }, status=status.HTTP_400_BAD_REQUEST)
+        # Validar que el ticket no esté en pruebas pendiente de aprobación
+        if ticket.estado.codigo == "trial":
+            # Verificar si ya hay una solicitud pendiente de finalización
+            pending_request = StateChangeRequest.objects.filter(
+                ticket=ticket,
+                status=StateChangeRequest.Status.PENDING,
+                from_state__codigo='trial',
+                to_state__codigo='closed'
+            ).exists()
+            if pending_request:
+                return Response({
+                    'error': 'No permitido',
+                    'message': 'El ticket está en pruebas y pendiente de aprobación, no puede ser modificado por el técnico.'
+                }, status=status.HTTP_400_BAD_REQUEST)
 
          # Validar que el estado de transición sea válido
         serializer = self.get_serializer(data=request.data, context={'ticket': ticket})
@@ -253,82 +261,54 @@ class StateChangeAV(UpdateAPIView):
         to_state = serializer.validated_data['to_state']
         reason = serializer.validated_data.get('reason', '')
         
-        # Validar transiciones específicas
-        if ticket.estado.codigo == "trial":
-            if to_state.codigo == "closed":
+        # Cuando se cambia al estado 4 (trial), crear automáticamente la solicitud de finalización
+        if to_state.codigo == "trial":
+            try:
+                estado_finalizado = Estado.objects.get(codigo='closed')
+            except Estado.DoesNotExist:
                 return Response({
-                    'error': 'No permitido',
-                    'message': 'No se puede pasar directamente de "En prueba" a "Finalizado". Debe pasar primero a "En pruebas pendiente de aprobación".'
-                }, status=status.HTTP_400_BAD_REQUEST)
+                    'error': 'Error del sistema',
+                    'message': 'El estado "Finalizado" no está configurado en el sistema.'
+                }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
             
-            if to_state.codigo == "trial_pending_approval":
-                try:
-                    estado_finalizado = Estado.objects.get(codigo='closed')
-                except Estado.DoesNotExist:
-                    return Response({
-                        'error': 'Error del sistema',
-                        'message': 'El estado "Finalizado" no está configurado en el sistema.'
-                    }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-                
-                estado_anterior = ticket.estado
-                ticket.estado = to_state
-                ticket.save(update_fields=['estado'])
-                
-                # Crear solicitud de cambio de estado
-                StateChangeRequest.objects.create(
-                    ticket=ticket,
-                    requested_by=user,
-                    from_state=estado_anterior,
-                    to_state=to_state,
-                    status=StateChangeRequest.Status.APPROVED,
-                    approved_by=user,
-                    approved_at=timezone.now(),
-                    reason=reason or "Solicitud de finalización"
-                )
-                
-                # Crear solicitud pendiente de aprobación
-                state_request = StateChangeRequest.objects.create(
-                    ticket=ticket,
-                    requested_by=user,
-                    from_state=estado_anterior,
-                    to_state=estado_finalizado,
-                    status=StateChangeRequest.Status.PENDING,
-                    reason=reason
-                )
-                
-                try:
-                    NotificationService.enviar_solicitud_cambio_estado(state_request)
-                except Exception as e:
-                    logger.error(f"Error enviando notificación de solicitud de finalización: {e}")
-                
-                return Response({
-                    'message': 'El estado final requiere validación del administrador, solicitud enviada correctamente',
-                    'request_id': state_request.id,
-                    'status': 'pending_approval',
-                    'to_state': to_state.nombre
-                }, status=status.HTTP_202_ACCEPTED)
-            else:
-                # Para cualquier otro cambio de estado
-                estado_anterior = ticket.estado
-                ticket.estado = to_state
-                ticket.save()
-                
-                # Registrar cambio en historial
-                TicketHistory.crear_entrada_historial(
+            estado_anterior = ticket.estado
+            ticket.estado = to_state
+            ticket.save(update_fields=['estado'])
+            
+            # Crear StateChangeRequest aprobado para el cambio al estado 4
+            StateChangeRequest.objects.create(
                 ticket=ticket,
-                accion=f"Cambio de estado de '{estado_anterior.nombre}' a '{to_state.nombre}'",
-                realizado_por=user,
-                estado_anterior=estado_anterior.nombre
-                )
-
-                # Notificar cambio de estado
-                NotificationService.enviar_notificacion_estado_cambiado(ticket, estado_anterior.nombre)
-                
-                return Response({
-                    'message': 'Estado actualizado correctamente',
-                    'ticket_id': ticket.pk,
-                    'new_state': to_state.nombre
-                }, status=status.HTTP_200_OK)
+                requested_by=user,
+                from_state=estado_anterior,
+                to_state=to_state,
+                status=StateChangeRequest.Status.APPROVED,
+                approved_by=user,
+                approved_at=timezone.now(),
+                reason=reason or "Cambio a estado en pruebas"
+            )
+            
+            # Crear StateChangeRequest pendiente para la finalización
+            state_request = StateChangeRequest.objects.create(
+                ticket=ticket,
+                requested_by=user,
+                from_state=to_state,
+                to_state=estado_finalizado,
+                status=StateChangeRequest.Status.PENDING,
+                reason=reason or "Solicitud de finalización desde estado en pruebas"
+            )
+            
+            try:
+                NotificationService.enviar_solicitud_cambio_estado(state_request)
+            except Exception as e:
+                logger.error(f"Error enviando notificación de solicitud de finalización: {e}")
+            
+            return Response({
+                'message': 'El ticket pasó a "En prueba" y se creó la solicitud de finalización.',
+                'ticket_id': ticket.pk,
+                'new_state': to_state.nombre,
+                'request_id': state_request.id,
+                'status': 'pending_approval'
+            }, status=status.HTTP_200_OK)
 
         if to_state.es_final:
             state_request = StateChangeRequest.objects.create(
@@ -413,12 +393,12 @@ class TestingApprovalAV(UpdateAPIView):
                 status=status.HTTP_403_FORBIDDEN
             )
 
-        # Validar que el ticket esté en estado "En pruebas pendiente de aprobación"
-        if ticket.estado.codigo != "trial_pending_approval":
+        # Validar que el ticket esté en estado "En prueba"
+        if ticket.estado.codigo != "trial":
             return Response(
                 {
                     "error": "estado_invalido",
-                    "message": "El ticket no está en estado 'En pruebas pendiente de aprobación'."
+                    "message": "El ticket no está en estado 'En prueba'."
                 },
                 status=status.HTTP_400_BAD_REQUEST
             )
@@ -431,7 +411,7 @@ class TestingApprovalAV(UpdateAPIView):
         now = timezone.now()
 
         if action == "approve":
-            # Pasar de "En pruebas pendiente de aprobación" a "Finalizado"
+            # Pasar de "En prueba" a "Finalizado"
             estado_final = get_object_or_404(Estado, codigo="closed")
             
             # Crear StateChangeRequest para la timeline
@@ -731,19 +711,18 @@ class TicketTimelineAV(RetrieveAPIView):
             })
             estado_actual_reconstruido = cambio.to_state
         
-        if ticket.estado.codigo == "trial_pending_approval":
+        # Si el ticket está en estado "trial" (4), verificar si hay una solicitud pendiente de finalización
+        if ticket.estado.codigo == "trial":
             pending_change = StateChangeRequest.objects.filter(
                 ticket=ticket,
                 status=StateChangeRequest.Status.PENDING,
-                from_state__codigo="trial"
+                from_state__codigo="trial",
+                to_state__codigo="closed"
             ).first()
             if pending_change:
-                estados_visitados.append({
-                    'estado_id': ticket.estado.id,
-                    'estado_nombre': ticket.estado.nombre,
-                    'fecha': pending_change.created_at
-                })
-                estado_actual_reconstruido = ticket.estado
+                # El ticket está en estado 4 pero tiene una solicitud pendiente de finalización
+                # Esto ya está reflejado en el estado actual, no necesitamos agregarlo de nuevo
+                pass
         
         if estado_actual_reconstruido.id != ticket.estado.id:
             if estado_actual_reconstruido.id < ticket.estado.id:

@@ -1052,7 +1052,7 @@ class TechnicianPerformanceView(APIView):
     permission_classes = [IsAuthenticated]
     
     FINAL_STATE_ID = 5  # Estado "Finalizado"
-    TRIAL_STATE_IDS = [4, 6]  # Estados de prueba que no se cuentan en tiempos
+    TRIAL_STATE_ID = 4  # Estado "En prueba" que no se cuenta en tiempos
 
     def get(self, request, *args, **kwargs):
         # Obtener el técnico actual
@@ -1112,7 +1112,11 @@ class TechnicianPerformanceView(APIView):
             avg_resolution_hours = 0.0
 
         # Calcular tiempos promedio entre estados relevantes
-        # Excluir estados de prueba (4 y 6) del cálculo
+        # IMPORTANTE: NO contar el tiempo que el ticket pasa en el estado 4 (pruebas)
+        # - Cuando entramos al estado 4: calculamos el tiempo hasta entrar a prueba
+        # - Mientras estamos en estado 4: NO se cuenta el tiempo (se "pausa" el contador)
+        # - Cuando salimos del estado 4: NO calculamos tiempo (todo fue tiempo en prueba)
+        # - El tiempo de referencia se actualiza al salir de prueba para continuar contando
         # Incluir transiciones aprobadas y rechazadas (según criterio: rechazos se toman en cuenta)
         state_transitions = (
             StateChangeRequest.objects
@@ -1120,8 +1124,6 @@ class TechnicianPerformanceView(APIView):
                 ticket__tecnico=technician,
                 status__in=[StateChangeRequest.Status.APPROVED, StateChangeRequest.Status.REJECTED]
             )
-            .exclude(from_state_id__in=self.TRIAL_STATE_IDS)  # Excluir fase de pruebas
-            .exclude(to_state_id__in=self.TRIAL_STATE_IDS)    # Excluir fase de pruebas
             .select_related('from_state', 'to_state', 'ticket')
             .order_by('ticket_id', 'created_at')
         )
@@ -1142,25 +1144,85 @@ class TechnicianPerformanceView(APIView):
             # Obtener fecha de creación del ticket
             try:
                 ticket = Ticket.objects.only('creado_en').get(pk=ticket_id)
-                prev_time = ticket.creado_en
+                # Tiempo de referencia: cuando el ticket estaba en el último estado no-de-prueba
+                # Inicialmente es la creación del ticket
+                last_non_trial_time = ticket.creado_en
+                last_non_trial_state_id = None  # No hay estado previo al inicio
+                # Tiempo cuando entramos a prueba (para saber cuándo pausamos el contador)
+                entered_trial_time = None
             except Ticket.DoesNotExist:
                 continue
             
             # Calcular tiempo entre cada transición
-            for i, transition in enumerate(transitions):
+            for transition in transitions:
                 # Usar approved_at si existe, sino created_at (para rechazadas)
                 transition_time = transition.approved_at if transition.approved_at else transition.created_at
                 
-                if transition_time and prev_time:
-                    # Tiempo desde la transición anterior (o creación) hasta esta transición
-                    delta = transition_time - prev_time
-                    if delta.total_seconds() > 0:
-                        # Clave: from_state -> to_state
-                        transition_key = f"{transition.from_state.codigo} -> {transition.to_state.codigo}"
-                        transition_times[transition_key].append(delta.total_seconds())
+                if not transition_time:
+                    continue
                 
-                # Actualizar prev_time para la siguiente iteración
-                prev_time = transition_time
+                from_state_id = transition.from_state_id
+                to_state_id = transition.to_state_id
+                
+                # Crear clave de transición para todas las transiciones (incluso las de prueba)
+                transition_key = f"{transition.from_state.codigo} -> {transition.to_state.codigo}"
+                
+                # Si SALIMOS del estado de prueba (estado 4)
+                if from_state_id == self.TRIAL_STATE_ID:
+                    # El tiempo en prueba NO se cuenta, así que continuamos desde donde quedamos
+                    # antes de entrar a prueba (last_non_trial_time no se actualizó al entrar)
+                    # NO calculamos tiempo en esta transición porque todo el tiempo fue en prueba
+                    # Solo actualizamos el tiempo de referencia para continuar contando desde aquí
+                    if to_state_id != self.TRIAL_STATE_ID:
+                        # Salimos de prueba a un estado normal
+                        # El tiempo de esta transición es 0 porque todo fue tiempo en prueba
+                        # No agregamos tiempo para esta transición
+                        # Actualizamos el tiempo de referencia para continuar desde aquí
+                        # Si es rechazada, el ticket sigue en estado 4, pero actualizamos el tiempo
+                        # Si es aprobada, el ticket cambia a to_state_id
+                        if transition.status == StateChangeRequest.Status.APPROVED:
+                            last_non_trial_state_id = to_state_id
+                            entered_trial_time = None  # Ya no estamos en prueba
+                        else:  # REJECTED: el ticket sigue en estado 4
+                            last_non_trial_state_id = from_state_id  # Sigue en estado 4
+                            # No actualizamos entered_trial_time porque seguimos en prueba
+                        last_non_trial_time = transition_time
+                # Si ENTRAMOS al estado de prueba (estado 4)
+                elif to_state_id == self.TRIAL_STATE_ID:
+                    # Antes de entrar a prueba, calculamos el tiempo desde el último estado normal
+                    # Este tiempo se cuenta independientemente de si la transición es aprobada o rechazada
+                    if from_state_id != self.TRIAL_STATE_ID and last_non_trial_time and transition_time > last_non_trial_time:
+                        delta = transition_time - last_non_trial_time
+                        if delta.total_seconds() > 0:
+                            transition_times[transition_key].append(delta.total_seconds())
+                    # Si es aprobada, el ticket entra a prueba: guardamos el tiempo pero NO actualizamos last_non_trial_time
+                    # Esto permite "pausar" el contador durante la prueba
+                    if transition.status == StateChangeRequest.Status.APPROVED:
+                        entered_trial_time = transition_time
+                        # NO actualizamos last_non_trial_time, así el tiempo en prueba se "salta"
+                    else:  # REJECTED: el ticket NO entra a prueba, sigue en from_state_id
+                        # El tiempo ya se contó arriba, ahora actualizamos la referencia normalmente
+                        # porque el ticket sigue en un estado normal (from_state_id)
+                        last_non_trial_time = transition_time
+                        last_non_trial_state_id = from_state_id
+                        entered_trial_time = None
+                # Si estamos en estados normales (ni entramos ni salimos de prueba)
+                elif from_state_id != self.TRIAL_STATE_ID and to_state_id != self.TRIAL_STATE_ID:
+                    # Calculamos el tiempo normalmente desde el último estado normal
+                    # Este tiempo se cuenta independientemente de si la transición es aprobada o rechazada
+                    if last_non_trial_time and transition_time > last_non_trial_time:
+                        delta = transition_time - last_non_trial_time
+                        if delta.total_seconds() > 0:
+                            transition_times[transition_key].append(delta.total_seconds())
+                    # Actualizamos el tiempo de referencia
+                    # Si es rechazada, el ticket NO cambia de estado, así que mantenemos from_state_id
+                    # Si es aprobada, el ticket cambia a to_state_id
+                    if transition.status == StateChangeRequest.Status.APPROVED:
+                        last_non_trial_state_id = to_state_id
+                    else:  # REJECTED: el ticket sigue en from_state_id
+                        last_non_trial_state_id = from_state_id
+                    last_non_trial_time = transition_time
+                    entered_trial_time = None  # No estamos en prueba
 
         # Calcular promedios por transición
         avg_state_times = []

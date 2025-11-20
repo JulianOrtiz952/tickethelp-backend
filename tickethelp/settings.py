@@ -18,7 +18,7 @@ ALLOWED_HOSTS = ["*"]
 
 # Para CSRF en producción (Render, Railway, etc.)
 CSRF_TRUSTED_ORIGINS = [
-    os.getenv("CSRF_TRUSTED_ORIGIN", "https://example.onrender.com")
+    os.getenv("CSRF_TRUSTED_ORIGIN", "https://tickethelp-frontend.onrender.com",)
 ]
 
 AUTH_USER_MODEL = "users.User"
@@ -51,9 +51,9 @@ INSTALLED_APPS = [
 # MIDDLEWARE
 # -----------------------------
 MIDDLEWARE = [
+    "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
-    "corsheaders.middleware.CorsMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -150,7 +150,7 @@ REST_FRAMEWORK = {
 # -----------------------------
 # CORS
 # -----------------------------
-FRONTEND_ORIGIN = os.getenv("FRONTEND_ORIGIN", "http://localhost:5173")
+FRONTEND_ORIGIN = os.getenv("https://tickethelp-frontend.onrender.com", "http://localhost:5173")
 CORS_ALLOWED_ORIGINS = [FRONTEND_ORIGIN] if FRONTEND_ORIGIN else []
 CORS_ALLOW_CREDENTIALS = True
 

@@ -6,6 +6,7 @@ from tickets.permissions import IsAdmin, IsAdminOrTechnician, IsClient, IsTechni
 from django.shortcuts import get_object_or_404
 from django.contrib.auth import get_user_model
 from django.utils import timezone
+from datetime import timedelta
 import tickets
 from django.db.models import Q
 import logging
@@ -668,10 +669,13 @@ class TicketTimelineAV(RetrieveAPIView):
         except Estado.DoesNotExist:
             estado_inicial = ticket.estado
         
+        # Asegurar que las fechas estén en la zona horaria local (Colombia)
+        creado_en_local = timezone.localtime(ticket.creado_en) if timezone.is_aware(ticket.creado_en) else ticket.creado_en
+        
         estados_visitados.append({
             'estado_id': estado_inicial.id,
             'estado_nombre': estado_inicial.nombre,
-            'fecha': ticket.creado_en
+            'fecha': creado_en_local
         })
         
         approved_changes = StateChangeRequest.objects.filter(
@@ -682,18 +686,21 @@ class TicketTimelineAV(RetrieveAPIView):
         estado_actual_reconstruido = estado_inicial
         
         for cambio in approved_changes:
+            # Convertir fechas a zona horaria local
+            approved_at_local = timezone.localtime(cambio.approved_at) if timezone.is_aware(cambio.approved_at) else cambio.approved_at
+            
             if estado_actual_reconstruido.id < cambio.from_state.id:
                 for estado_id in range(estado_actual_reconstruido.id + 1, cambio.from_state.id + 1):
                     try:
                         estado_intermedio = Estado.objects.get(id=estado_id)
-                        tiempo_entre = (cambio.approved_at - ticket.creado_en).total_seconds()
+                        tiempo_entre = (approved_at_local - creado_en_local).total_seconds()
                         estados_totales = cambio.from_state.id - estado_actual_reconstruido.id
                         if estados_totales > 0:
                             tiempo_por_estado = tiempo_entre / estados_totales
                             segundos_ajuste = (estado_id - estado_actual_reconstruido.id) * tiempo_por_estado
-                            fecha_estado = ticket.creado_en + timezone.timedelta(seconds=segundos_ajuste)
+                            fecha_estado = creado_en_local + timedelta(seconds=segundos_ajuste)
                         else:
-                            fecha_estado = cambio.approved_at
+                            fecha_estado = approved_at_local
                         
                         estados_visitados.append({
                             'estado_id': estado_intermedio.id,
@@ -707,7 +714,7 @@ class TicketTimelineAV(RetrieveAPIView):
             estados_visitados.append({
                 'estado_id': cambio.to_state.id,
                 'estado_nombre': cambio.to_state.nombre,
-                'fecha': cambio.approved_at
+                'fecha': approved_at_local
             })
             estado_actual_reconstruido = cambio.to_state
         
@@ -724,9 +731,12 @@ class TicketTimelineAV(RetrieveAPIView):
                 # Esto ya está reflejado en el estado actual, no necesitamos agregarlo de nuevo
                 pass
         
+        # Convertir actualizado_en a zona horaria local
+        actualizado_en_local = timezone.localtime(ticket.actualizado_en) if timezone.is_aware(ticket.actualizado_en) else ticket.actualizado_en
+        
         if estado_actual_reconstruido.id != ticket.estado.id:
             if estado_actual_reconstruido.id < ticket.estado.id:
-                tiempo_total = (ticket.actualizado_en - ticket.creado_en).total_seconds()
+                tiempo_total = (actualizado_en_local - creado_en_local).total_seconds()
                 estados_totales = ticket.estado.id - estado_actual_reconstruido.id
                 for estado_id in range(estado_actual_reconstruido.id + 1, ticket.estado.id + 1):
                     try:
@@ -734,9 +744,9 @@ class TicketTimelineAV(RetrieveAPIView):
                         if estados_totales > 0:
                             tiempo_por_estado = tiempo_total / estados_totales
                             segundos_ajuste = (estado_id - estado_actual_reconstruido.id) * tiempo_por_estado
-                            fecha_estado = ticket.creado_en + timezone.timedelta(seconds=segundos_ajuste)
+                            fecha_estado = creado_en_local + timedelta(seconds=segundos_ajuste)
                         else:
-                            fecha_estado = ticket.actualizado_en
+                            fecha_estado = actualizado_en_local
                         
                         estados_visitados.append({
                             'estado_id': estado_intermedio.id,
@@ -749,19 +759,31 @@ class TicketTimelineAV(RetrieveAPIView):
                 estados_visitados.append({
                     'estado_id': ticket.estado.id,
                     'estado_nombre': ticket.estado.nombre,
-                    'fecha': ticket.actualizado_en
+                    'fecha': actualizado_en_local
                 })
         
-        estados_visitados.sort(key=lambda x: x['fecha'] or timezone.now())
+        # Ordenar por fecha (asegurando que todas las fechas sean comparables)
+        estados_visitados.sort(key=lambda x: x['fecha'] if x['fecha'] else timezone.localtime(timezone.now()))
         
         timeline = []
         for estado_info in estados_visitados:
             fecha_completa = estado_info['fecha']
-            timeline.append({
-                'estado_id': estado_info['estado_id'],
-                'estado': estado_info['estado_nombre'],
-                'fecha': fecha_completa.strftime('%Y-%m-%d') if fecha_completa else None,
-                'hora': fecha_completa.strftime('%H:%M:%S') if fecha_completa else None
-            })
+            if fecha_completa:
+                # Asegurar que la fecha esté en zona horaria local antes de formatear
+                if timezone.is_aware(fecha_completa):
+                    fecha_completa = timezone.localtime(fecha_completa)
+                timeline.append({
+                    'estado_id': estado_info['estado_id'],
+                    'estado': estado_info['estado_nombre'],
+                    'fecha': fecha_completa.strftime('%Y-%m-%d'),
+                    'hora': fecha_completa.strftime('%H:%M:%S')
+                })
+            else:
+                timeline.append({
+                    'estado_id': estado_info['estado_id'],
+                    'estado': estado_info['estado_nombre'],
+                    'fecha': None,
+                    'hora': None
+                })
         
         return timeline

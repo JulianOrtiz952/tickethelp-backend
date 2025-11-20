@@ -150,8 +150,15 @@ REST_FRAMEWORK = {
 # -----------------------------
 # CORS
 # -----------------------------
-FRONTEND_ORIGIN = os.getenv("https://tickethelp-frontend.onrender.com", "http://localhost:5173")
-CORS_ALLOWED_ORIGINS = [FRONTEND_ORIGIN] if FRONTEND_ORIGIN else []
+FRONTEND_ORIGIN = os.getenv(
+    "FRONTEND_ORIGIN",
+    "https://tickethelp-frontend.onrender.com",  # valor por defecto en prod
+)
+CORS_ALLOWED_ORIGINS = [
+    FRONTEND_ORIGIN,
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+]
 CORS_ALLOW_CREDENTIALS = True
 
 # -----------------------------

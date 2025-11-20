@@ -245,7 +245,7 @@ class StateChangeAV(UpdateAPIView):
                 ticket=ticket,
                 status=StateChangeRequest.Status.PENDING,
                 from_state__codigo='trial',
-                to_state__codigo='closed'
+                to_state__codigo='finalized'
             ).exists()
             if pending_request:
                 return Response({
@@ -264,7 +264,7 @@ class StateChangeAV(UpdateAPIView):
         # Cuando se cambia al estado 4 (trial), crear automáticamente la solicitud de finalización
         if to_state.codigo == "trial":
             try:
-                estado_finalizado = Estado.objects.get(codigo='closed')
+                estado_finalizado = Estado.objects.get(codigo='finalized')
             except Estado.DoesNotExist:
                 return Response({
                     'error': 'Error del sistema',
@@ -303,7 +303,7 @@ class StateChangeAV(UpdateAPIView):
                 logger.error(f"Error enviando notificación de solicitud de finalización: {e}")
             
             return Response({
-                'message': 'El ticket pasó a "En prueba" y se creó la solicitud de finalización.',
+                'message': 'El ticket pasó a "Pruebas" y se creó la solicitud de finalización.',
                 'ticket_id': ticket.pk,
                 'new_state': to_state.nombre,
                 'request_id': state_request.id,
@@ -393,12 +393,12 @@ class TestingApprovalAV(UpdateAPIView):
                 status=status.HTTP_403_FORBIDDEN
             )
 
-        # Validar que el ticket esté en estado "En prueba"
+        # Validar que el ticket esté en estado "Pruebas"
         if ticket.estado.codigo != "trial":
             return Response(
                 {
                     "error": "estado_invalido",
-                    "message": "El ticket no está en estado 'En prueba'."
+                    "message": "El ticket no está en estado 'Pruebas'."
                 },
                 status=status.HTTP_400_BAD_REQUEST
             )
@@ -411,8 +411,8 @@ class TestingApprovalAV(UpdateAPIView):
         now = timezone.now()
 
         if action == "approve":
-            # Pasar de "En prueba" a "Finalizado"
-            estado_final = get_object_or_404(Estado, codigo="closed")
+            # Pasar de "Pruebas" a "Finalizado"
+            estado_final = get_object_or_404(Estado, codigo="finalized")
             
             # Crear StateChangeRequest para la timeline
             StateChangeRequest.objects.create(
@@ -474,7 +474,7 @@ class TestingApprovalAV(UpdateAPIView):
             estado_anterior=estado_anterior.nombre
         )
 
-        # Notificar que el estado cambió de En pruebas a En reparación
+        # Notificar que el estado cambió de Pruebas a En reparación
         NotificationService.enviar_notificacion_estado_cambiado(ticket, estado_anterior.nombre)
 
         return Response(
@@ -711,13 +711,13 @@ class TicketTimelineAV(RetrieveAPIView):
             })
             estado_actual_reconstruido = cambio.to_state
         
-        # Si el ticket está en estado "trial" (4), verificar si hay una solicitud pendiente de finalización
+        # Si el ticket está en estado "Pruebas" (4), verificar si hay una solicitud pendiente de finalización
         if ticket.estado.codigo == "trial":
             pending_change = StateChangeRequest.objects.filter(
                 ticket=ticket,
                 status=StateChangeRequest.Status.PENDING,
                 from_state__codigo="trial",
-                to_state__codigo="closed"
+                to_state__codigo="finalized"
             ).first()
             if pending_change:
                 # El ticket está en estado 4 pero tiene una solicitud pendiente de finalización

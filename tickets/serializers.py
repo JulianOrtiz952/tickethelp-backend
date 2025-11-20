@@ -159,20 +159,31 @@ class StateChangeSerializer(serializers.Serializer):
         # Validar transición
         is_valid_transition = False
         
-        if to_state.id == next_allowed_id:
+        # Transición especial: de estado 3 (En reparación) a estado 6 (Pruebas)
+        # Esto es necesario porque el estado 4 es "Finalizado" (inactivo)
+        if current_id == 3 and to_state.codigo == "trial":
+            # Permitir ir de "En reparación" (3) directamente a "Pruebas" (6)
+            is_valid_transition = True
+        elif to_state.id == next_allowed_id:
             # Transición lineal normal
             is_valid_transition = True
-        elif current_id == 4 and to_state.id == 5:
-            # Bloquear transición directa de "Pruebas" (4) a "Finalizado" (5)
-            # El cambio a estado 4 automáticamente crea una solicitud de finalización
+        elif current_id == 6 and to_state.id == 5:
+            # Bloquear transición directa de "Pruebas" (6) a "Finalizado" (5)
+            # El cambio a estado 6 automáticamente crea una solicitud de finalización
             raise serializers.ValidationError({
                 "to_state": "No se puede pasar directamente de 'Pruebas' a 'Finalizado'. El cambio a 'Pruebas' crea automáticamente una solicitud de finalización que debe ser aprobada por el administrador."
             })
         
         if not is_valid_transition:
-            raise serializers.ValidationError({
-                "to_state": f"Transición inválida. Solo se permite avanzar de {current_id} a {next_allowed_id}."
-            })
+            # Si es estado 3, mostrar que puede ir a 4 o 6
+            if current_id == 3:
+                raise serializers.ValidationError({
+                    "to_state": f"Transición inválida. Desde 'En reparación' (3) solo se permite avanzar a 'Pruebas' (6)."
+                })
+            else:
+                raise serializers.ValidationError({
+                    "to_state": f"Transición inválida. Solo se permite avanzar de {current_id} a {next_allowed_id}."
+                })
 
         # (Opcional) valida que el estado esté activo si manejas 'es_activo'
         if hasattr(to_state, 'es_activo') and not to_state.es_activo:

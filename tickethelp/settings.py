@@ -183,7 +183,44 @@ NOTIFICATIONS_EMAIL_ENABLED = os.getenv('NOTIFICATIONS_EMAIL_ENABLED', 'True') =
 # -----------------------------
 # SIMPLE JWT CONFIGURATION
 # -----------------------------
+from datetime import timedelta
 from rest_framework_simplejwt.settings import api_settings
 
 # Configurar SimpleJWT para usar 'document' en lugar de 'id'
 api_settings.USER_ID_FIELD = 'document'
+
+# Configuración de expiración de tokens JWT
+# Valores configurados:
+# - ACCESS_TOKEN_LIFETIME: 20 minutos (token de acceso válido por 20 minutos)
+# - REFRESH_TOKEN_LIFETIME: 7 días (permite mantener sesión activa por una semana)
+# 
+# Estos valores equilibran seguridad y usabilidad:
+# - El token de acceso expira cada 20 minutos, limitando el riesgo si es comprometido
+# - El refresh token permite renovar el acceso sin reautenticarse por 7 días
+
+# Aplicar configuración directamente a api_settings para asegurar que se use
+api_settings.ACCESS_TOKEN_LIFETIME = timedelta(minutes=20)  # Token de acceso válido por 20 minutos
+api_settings.REFRESH_TOKEN_LIFETIME = timedelta(days=7)  # Token de refresco válido por 7 días
+api_settings.ROTATE_REFRESH_TOKENS = True  # Genera nuevo refresh token en cada renovación
+api_settings.BLACKLIST_AFTER_ROTATION = True  # Invalida el refresh token anterior tras rotación
+api_settings.UPDATE_LAST_LOGIN = True  # Actualiza el último login del usuario
+api_settings.ALGORITHM = 'HS256'  # Algoritmo de encriptación
+api_settings.SIGNING_KEY = SECRET_KEY  # Usa la SECRET_KEY del proyecto
+api_settings.AUTH_HEADER_TYPES = ('Bearer',)  # Tipo de header: "Bearer <token>"
+api_settings.AUTH_HEADER_NAME = 'HTTP_AUTHORIZATION'  # Nombre del header HTTP
+api_settings.USER_ID_CLAIM = 'document'  # Claim del JWT que contiene el document
+
+# También definir SIMPLE_JWT para compatibilidad con otras partes del código
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=20),  # Token de acceso válido por 20 minutos
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),  # Token de refresco válido por 7 días
+    'ROTATE_REFRESH_TOKENS': True,  # Genera nuevo refresh token en cada renovación
+    'BLACKLIST_AFTER_ROTATION': True,  # Invalida el refresh token anterior tras rotación
+    'UPDATE_LAST_LOGIN': True,  # Actualiza el último login del usuario
+    'ALGORITHM': 'HS256',  # Algoritmo de encriptación
+    'SIGNING_KEY': SECRET_KEY,  # Usa la SECRET_KEY del proyecto
+    'AUTH_HEADER_TYPES': ('Bearer',),  # Tipo de header: "Bearer <token>"
+    'AUTH_HEADER_NAME': 'HTTP_AUTHORIZATION',  # Nombre del header HTTP
+    'USER_ID_FIELD': 'document',  # Campo usado como identificador de usuario
+    'USER_ID_CLAIM': 'document',  # Claim del JWT que contiene el document
+}

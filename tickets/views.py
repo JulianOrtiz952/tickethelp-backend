@@ -148,12 +148,15 @@ class ChangeTechnicianAV(UpdateAPIView):
                 }, status=status.HTTP_400_BAD_REQUEST)
 
             # Crear entrada en el historial
+            # Escenario 2: Guardar en historial el técnico cambiado con el estado al que llegó
+            # El estado "al que llegó" es el estado actual del ticket (ticket.estado)
+            # El método crear_entrada_historial ya guarda el estado actual en el campo 'estado'
             TicketHistory.crear_entrada_historial(
                 ticket=ticket,
                 accion=f"Cambio de técnico de {old_technician.get_full_name() if old_technician else 'Sin técnico'} a {new_technician.get_full_name()}",
                 realizado_por=usuario_cambio,
                 tecnico_anterior=old_technician,
-                estado_anterior=ticket.estado.nombre if ticket.estado else None
+                estado_anterior=None  # No hay cambio de estado, solo cambio de técnico
             )
 
             return Response({

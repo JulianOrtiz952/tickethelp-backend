@@ -34,7 +34,7 @@
     "pk": 4,
     "fields": {
       "codigo": "trial",
-      "nombre": "En prueba",
+      "nombre": "Pruebas",
       "es_activo": true,
       "es_final": false
     }
@@ -43,7 +43,7 @@
     "model": "tickets.estado",
     "pk": 5,
     "fields": {
-      "codigo": "closed",
+      "codigo": "finalized",
       "nombre": "finalizado",
       "es_activo": false,
       "es_final": true

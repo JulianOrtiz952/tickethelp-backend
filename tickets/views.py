@@ -415,17 +415,42 @@ class TestingApprovalAV(UpdateAPIView):
             # Pasar de "Pruebas" a "Finalizado"
             estado_final = get_object_or_404(Estado, codigo="finalized")
             
-            # Crear StateChangeRequest para la timeline
-            StateChangeRequest.objects.create(
+            # Buscar la solicitud pendiente original (de trial a finalized)
+            # Optimización: precargar relaciones necesarias para evitar queries N+1
+            pending_request = StateChangeRequest.objects.select_related(
+                'ticket', 'ticket__cliente', 'ticket__tecnico', 'ticket__administrador',
+                'from_state', 'to_state', 'requested_by', 'approved_by'
+            ).filter(
                 ticket=ticket,
-                requested_by=user,
-                from_state=estado_anterior,
-                to_state=estado_final,
-                status=StateChangeRequest.Status.APPROVED,
-                approved_by=user,
-                approved_at=now,
-                reason="Pruebas aprobadas por administrador"
-            )
+                status=StateChangeRequest.Status.PENDING,
+                from_state__codigo='trial',
+                to_state__codigo='finalized'
+            ).first()
+            
+            if pending_request:
+                # Actualizar la solicitud pendiente a aprobada
+                pending_request.status = StateChangeRequest.Status.APPROVED
+                pending_request.approved_by = user
+                pending_request.approved_at = now
+                pending_request.save()
+                
+                # Notificar aprobación de la solicitud de cambio de estado
+                try:
+                    NotificationService.enviar_aprobacion_cambio_estado(pending_request)
+                except Exception as e:
+                    logger.error(f"Error enviando notificación de aprobación de cambio de estado: {e}")
+            else:
+                # Si no hay solicitud pendiente, crear una nueva para la timeline
+                StateChangeRequest.objects.create(
+                    ticket=ticket,
+                    requested_by=user,
+                    from_state=estado_anterior,
+                    to_state=estado_final,
+                    status=StateChangeRequest.Status.APPROVED,
+                    approved_by=user,
+                    approved_at=now,
+                    reason="Pruebas aprobadas por administrador"
+                )
             
             ticket.estado = estado_final
             ticket.save(update_fields=["estado"])
@@ -451,8 +476,35 @@ class TestingApprovalAV(UpdateAPIView):
 
         # action == "reject": volver a "En reparación"
         estado_reparacion = get_object_or_404(Estado, codigo="in_repair")
+        rejection_reason = serializer.validated_data.get("rejection_reason", "Pruebas rechazadas por administrador")
         
-        # Crear StateChangeRequest para la timeline
+        # Buscar la solicitud pendiente original (de trial a finalized)
+        # Optimización: precargar relaciones necesarias para evitar queries N+1
+        pending_request = StateChangeRequest.objects.select_related(
+            'ticket', 'ticket__cliente', 'ticket__tecnico', 'ticket__administrador',
+            'from_state', 'to_state', 'requested_by', 'approved_by'
+        ).filter(
+            ticket=ticket,
+            status=StateChangeRequest.Status.PENDING,
+            from_state__codigo='trial',
+            to_state__codigo='finalized'
+        ).first()
+        
+        if pending_request:
+            # Actualizar la solicitud pendiente a rechazada
+            pending_request.status = StateChangeRequest.Status.REJECTED
+            pending_request.approved_by = user
+            pending_request.approved_at = now
+            pending_request.rejection_reason = rejection_reason
+            pending_request.save()
+            
+            # Notificar rechazo de la solicitud de cambio de estado
+            try:
+                NotificationService.enviar_rechazo_cambio_estado(pending_request)
+            except Exception as e:
+                logger.error(f"Error enviando notificación de rechazo de cambio de estado: {e}")
+        
+        # Crear StateChangeRequest para la timeline (cambio a reparación)
         StateChangeRequest.objects.create(
             ticket=ticket,
             requested_by=user,
@@ -461,7 +513,7 @@ class TestingApprovalAV(UpdateAPIView):
             status=StateChangeRequest.Status.APPROVED,
             approved_by=user,
             approved_at=now,
-            reason="Pruebas rechazadas por administrador"
+            reason=rejection_reason
         )
         
         ticket.estado = estado_reparacion

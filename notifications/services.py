@@ -1,4 +1,6 @@
 import logging
+import time
+import socket
 from typing import Dict, Any, Optional
 from django.core.mail import send_mail, EmailMultiAlternatives
 from django.conf import settings
@@ -6,6 +8,7 @@ from django.utils import timezone
 from django.contrib.auth import get_user_model
 from django.template.loader import render_to_string
 from threading import Thread
+from smtplib import SMTPException, SMTPServerDisconnected
 
 from .models import Notification, NotificationType
 from tickets.models import Ticket
@@ -573,15 +576,35 @@ class NotificationService:
             email.attach_alternative(html_content, "text/html")
 
             def _send():
-                try:
-                    email.send()
-                except Exception as e:
-                    logger.error(f"Error enviando email en background para {usuario.email}: {e}")
-                    # Intentar fallback de texto plano
+                max_retries = 3
+                retry_delay = 2  # segundos
+                
+                for attempt in range(max_retries):
                     try:
-                        cls._enviar_email_texto_plano(usuario, ticket, titulo, mensaje)
-                    except Exception as e2:
-                        logger.error(f"Fallback texto plano falló para {usuario.email}: {e2}")
+                        # Usar connection con timeout configurado
+                        from django.core.mail import get_connection
+                        connection = get_connection(
+                            timeout=getattr(settings, 'EMAIL_TIMEOUT', 30)
+                        )
+                        email.connection = connection
+                        email.send()
+                        logger.info(f"Email enviado exitosamente a {usuario.email} (intento {attempt + 1})")
+                        return  # Éxito, salir del loop
+                    except (SMTPException, SMTPServerDisconnected, ConnectionError, TimeoutError, socket.error, OSError) as e:
+                        if attempt < max_retries - 1:
+                            wait_time = retry_delay * (2 ** attempt)
+                            logger.warning(f"Error de conexión SMTP para {usuario.email} (intento {attempt + 1}/{max_retries}): {e}. Reintentando en {wait_time} segundos...")
+                            time.sleep(wait_time)
+                        else:
+                            logger.error(f"Error enviando email para {usuario.email} después de {max_retries} intentos: {e}")
+                            try:
+                                cls._enviar_email_texto_plano(usuario, ticket, titulo, mensaje)
+                            except Exception as e2:
+                                logger.error(f"Fallback texto plano falló para {usuario.email}: {e2}")
+                    except Exception as e:
+                        logger.error(f"Error inesperado enviando email a {usuario.email}: {e}")
+                        # No reintentar para errores no relacionados con conexión
+                        break
 
             Thread(target=_send, daemon=True).start()
 
@@ -649,13 +672,23 @@ Sistema de Tickets
         subject = f"{titulo} - Ticket #{ticket.pk}"
         text_content = cls._generar_contenido_texto_plano(usuario, ticket, titulo, mensaje)
         
-        send_mail(
-            subject=subject,
-            message=text_content,
-            from_email=getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@tickethelp.com'),
-            recipient_list=[usuario.email],
-            fail_silently=False
-        )
+        try:
+            # Usar connection con timeout configurado
+            from django.core.mail import get_connection
+            connection = get_connection(
+                timeout=getattr(settings, 'EMAIL_TIMEOUT', 30)
+            )
+            send_mail(
+                subject=subject,
+                message=text_content,
+                from_email=getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@tickethelp.com'),
+                recipient_list=[usuario.email],
+                fail_silently=False,
+                connection=connection
+            )
+        except Exception as e:
+            logger.error(f"Error enviando email de texto plano a {usuario.email}: {e}")
+            raise
     
     @classmethod
     def _validar_usuario_para_notificacion(cls, usuario: User) -> bool:

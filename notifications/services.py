@@ -2,12 +2,13 @@ import logging
 import time
 import socket
 from typing import Dict, Any, Optional
+from concurrent.futures import ThreadPoolExecutor
+
 from django.core.mail import send_mail, EmailMultiAlternatives
 from django.conf import settings
 from django.utils import timezone
 from django.contrib.auth import get_user_model
 from django.template.loader import render_to_string
-from threading import Thread
 from smtplib import SMTPException, SMTPServerDisconnected
 
 from .models import Notification, NotificationType
@@ -15,6 +16,10 @@ from tickets.models import Ticket
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
+
+# Pool global de hilos para envío de correos, evita crear un hilo nuevo por email
+EMAIL_MAX_WORKERS = getattr(settings, "EMAIL_MAX_WORKERS", 5)
+_email_executor = ThreadPoolExecutor(max_workers=EMAIL_MAX_WORKERS)
 
 
 class NotificationService:
@@ -571,42 +576,75 @@ class NotificationService:
                 subject=subject,
                 body=text_content,
                 from_email=getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@tickethelp.com'),
-                to=[usuario.email]
+                to=[usuario.email],
             )
             email.attach_alternative(html_content, "text/html")
 
             def _send():
+                """
+                Función interna que realiza el envío real del correo.
+                Se ejecuta en un hilo del pool para no bloquear la petición HTTP.
+                """
                 max_retries = 3
                 retry_delay = 2  # segundos
-                
+
                 for attempt in range(max_retries):
                     try:
                         # Usar connection con timeout configurado
                         from django.core.mail import get_connection
+
                         connection = get_connection(
                             timeout=getattr(settings, 'EMAIL_TIMEOUT', 30)
                         )
                         email.connection = connection
                         email.send()
-                        logger.info(f"Email enviado exitosamente a {usuario.email} (intento {attempt + 1})")
+                        logger.info(
+                            f"Email enviado exitosamente a {usuario.email} (intento {attempt + 1})"
+                        )
                         return  # Éxito, salir del loop
-                    except (SMTPException, SMTPServerDisconnected, ConnectionError, TimeoutError, socket.error, OSError) as e:
+                    except (
+                        SMTPException,
+                        SMTPServerDisconnected,
+                        ConnectionError,
+                        TimeoutError,
+                        socket.error,
+                        OSError,
+                    ) as e:
                         if attempt < max_retries - 1:
-                            wait_time = retry_delay * (2 ** attempt)
-                            logger.warning(f"Error de conexión SMTP para {usuario.email} (intento {attempt + 1}/{max_retries}): {e}. Reintentando en {wait_time} segundos...")
+                            wait_time = retry_delay * (2**attempt)
+                            logger.warning(
+                                f"Error de conexión SMTP para {usuario.email} "
+                                f"(intento {attempt + 1}/{max_retries}): {e}. "
+                                f"Reintentando en {wait_time} segundos..."
+                            )
                             time.sleep(wait_time)
                         else:
-                            logger.error(f"Error enviando email para {usuario.email} después de {max_retries} intentos: {e}")
+                            logger.error(
+                                f"Error enviando email para {usuario.email} "
+                                f"después de {max_retries} intentos: {e}"
+                            )
                             try:
-                                cls._enviar_email_texto_plano(usuario, ticket, titulo, mensaje)
+                                cls._enviar_email_texto_plano(
+                                    usuario, ticket, titulo, mensaje
+                                )
                             except Exception as e2:
-                                logger.error(f"Fallback texto plano falló para {usuario.email}: {e2}")
+                                logger.error(
+                                    f"Fallback texto plano falló para {usuario.email}: {e2}"
+                                )
                     except Exception as e:
-                        logger.error(f"Error inesperado enviando email a {usuario.email}: {e}")
+                        logger.error(
+                            f"Error inesperado enviando email a {usuario.email}: {e}"
+                        )
                         # No reintentar para errores no relacionados con conexión
                         break
 
-            Thread(target=_send, daemon=True).start()
+            # Encolar el envío en el pool de hilos para que no bloquee la petición
+            try:
+                _email_executor.submit(_send)
+            except Exception as e:
+                # Si por alguna razón el pool falla, intentar envío síncrono como último recurso
+                logger.error(f"No se pudo encolar envío de email en pool: {e}")
+                _send()
 
         except Exception as e:
             logger.error(f"Error preparando email para {usuario.email}: {e}")

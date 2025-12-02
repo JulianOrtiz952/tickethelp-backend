@@ -30,11 +30,14 @@ class CustomSMTPEmailBackend(SMTPEmailBackend):
         if self.connection:
             return False
         
+        # Obtener timeout de settings si está configurado, sino usar el default
+        timeout = getattr(settings, 'EMAIL_TIMEOUT', self.timeout or 30)
+        
         try:
             # Si estamos en DEBUG y hay un contexto SSL personalizado
             if getattr(settings, 'DEBUG', False) and hasattr(self, 'ssl_context'):
                 self.connection = self.connection_class(
-                    self.host, self.port, timeout=self.timeout
+                    self.host, self.port, timeout=timeout
                 )
                 if self.use_tls:
                     self.connection.starttls(context=self.ssl_context)
@@ -43,7 +46,7 @@ class CustomSMTPEmailBackend(SMTPEmailBackend):
             else:
                 # Comportamiento estándar para producción
                 self.connection = self.connection_class(
-                    self.host, self.port, timeout=self.timeout
+                    self.host, self.port, timeout=timeout
                 )
                 if self.use_tls:
                     self.connection.starttls()

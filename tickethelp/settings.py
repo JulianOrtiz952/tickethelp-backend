@@ -162,19 +162,18 @@ CORS_ALLOWED_ORIGINS = [
 CORS_ALLOW_CREDENTIALS = True
 
 # -----------------------------
-# CONFIGURACIÓN DE CORREO ELECTRÓNICO
+# CONFIGURACIÓN DE CORREO ELECTRÓNICO (Brevo)
 # -----------------------------
-# Para desarrollo local, puedes usar un servicio como Gmail, Outlook, etc.
-# O usar un servicio como Mailtrap, SendGrid, etc.
+# Configuración para Brevo (anteriormente Sendinblue)
+# Las credenciales deben estar en el archivo .env
 
-# Configuración básica de email
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
-EMAIL_HOST = os.getenv('EMAIL_HOST', 'smtp.gmail.com')  # Cambia por tu servidor SMTP
+EMAIL_HOST = os.getenv('EMAIL_HOST', 'smtp-relay.brevo.com')
 EMAIL_PORT = int(os.getenv('EMAIL_PORT', '587'))
-EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'True') == 'True'
+EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'True') == 'True'  # Brevo usa TLS en puerto 587
 EMAIL_USE_SSL = os.getenv('EMAIL_USE_SSL', 'False') == 'True'
-EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', '')  # Tu email
-EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '')  # Tu contraseña o app password
+EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', '')  # Tu usuario SMTP de Brevo
+EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '')  # Tu clave SMTP de Brevo
 DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'noreply@tickethelp.com')
 
 # Configuración de notificaciones

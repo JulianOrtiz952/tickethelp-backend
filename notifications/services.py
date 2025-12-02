@@ -10,6 +10,8 @@ from django.utils import timezone
 from django.contrib.auth import get_user_model
 from django.template.loader import render_to_string
 from smtplib import SMTPException, SMTPServerDisconnected
+from sendgrid import SendGridAPIClient
+from sendgrid.helpers.mail import Mail
 
 from .models import Notification, NotificationType
 from tickets.models import Ticket
@@ -549,109 +551,173 @@ class NotificationService:
     @classmethod
     def _enviar_email(cls, usuario: User, ticket: Ticket, tipo_codigo: str,
                      titulo: str, mensaje: str):
-        if not hasattr(settings, 'EMAIL_HOST') or not settings.EMAIL_HOST:
-            logger.warning("Configuración de email no encontrada, saltando envío de email")
-            return
-        
+        """
+        Decide el método de envío:
+        - Si hay SENDGRID_API_KEY configurada, usa la API HTTP de SendGrid.
+        - En caso contrario, usa el backend SMTP configurado en Django.
+        """
         subject = f"{titulo} - Ticket #{ticket.pk}"
-        
-        # Determinar la plantilla HTML según el tipo de usuario y tipo de notificación
+
+        # Contexto común para plantillas
         template_html = cls._obtener_plantilla_html(usuario, tipo_codigo)
-        
-        # Contexto para la plantilla
         context = {
-            'usuario': usuario,
-            'ticket': ticket,
-            'subject': subject,
-            'titulo': titulo,
-            'mensaje': mensaje,
-            'datos_adicionales': getattr(ticket, '_notification_data', {}),
+            "usuario": usuario,
+            "ticket": ticket,
+            "subject": subject,
+            "titulo": titulo,
+            "mensaje": mensaje,
+            "datos_adicionales": getattr(ticket, "_notification_data", {}),
         }
-        
-        try:
+
+        def _send_via_sendgrid():
+            """Envío usando la API HTTP de SendGrid."""
+            api_key = getattr(settings, "SENDGRID_API_KEY", "")
+            if not api_key:
+                raise RuntimeError("SENDGRID_API_KEY no está configurada")
+
             html_content = render_to_string(template_html, context)
-            text_content = cls._generar_contenido_texto_plano(usuario, ticket, titulo, mensaje)
+            text_content = cls._generar_contenido_texto_plano(
+                usuario, ticket, titulo, mensaje
+            )
+
+            message = Mail(
+                from_email=getattr(
+                    settings,
+                    "SENDGRID_FROM_EMAIL",
+                    getattr(
+                        settings, "DEFAULT_FROM_EMAIL", "noreply@tickethelp.com"
+                    ),
+                ),
+                to_emails=[usuario.email],
+                subject=subject,
+                plain_text_content=text_content,
+                html_content=html_content,
+            )
+
+            max_retries = 3
+            retry_delay = 2
+
+            for attempt in range(max_retries):
+                try:
+                    sg = SendGridAPIClient(api_key)
+                    response = sg.send(message)
+                    logger.info(
+                        f"SendGrid email enviado a {usuario.email} "
+                        f"(status {response.status_code}, intento {attempt + 1})"
+                    )
+                    return
+                except Exception as e:
+                    if attempt < max_retries - 1:
+                        wait_time = retry_delay * (2**attempt)
+                        logger.warning(
+                            f"Error enviando email con SendGrid a {usuario.email} "
+                            f"(intento {attempt + 1}/{max_retries}): {e}. "
+                            f"Reintentando en {wait_time} segundos..."
+                        )
+                        time.sleep(wait_time)
+                    else:
+                        logger.error(
+                            f"Fallo definitivo enviando email con SendGrid a "
+                            f"{usuario.email}: {e}"
+                        )
+                        # Dejar que fuera se intente fallback SMTP
+                        raise
+
+        def _send_via_smtp():
+            """Envío usando el backend SMTP configurado en Django."""
+            if not getattr(settings, "EMAIL_HOST", None):
+                logger.warning(
+                    "Configuración de EMAIL_HOST no encontrada, saltando envío SMTP"
+                )
+                return
+
+            html_content = render_to_string(template_html, context)
+            text_content = cls._generar_contenido_texto_plano(
+                usuario, ticket, titulo, mensaje
+            )
 
             email = EmailMultiAlternatives(
                 subject=subject,
                 body=text_content,
-                from_email=getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@tickethelp.com'),
+                from_email=getattr(
+                    settings, "DEFAULT_FROM_EMAIL", "noreply@tickethelp.com"
+                ),
                 to=[usuario.email],
             )
             email.attach_alternative(html_content, "text/html")
 
-            def _send():
-                """
-                Función interna que realiza el envío real del correo.
-                Se ejecuta en un hilo del pool para no bloquear la petición HTTP.
-                """
-                max_retries = 3
-                retry_delay = 2  # segundos
+            max_retries = 3
+            retry_delay = 2  # segundos
 
-                for attempt in range(max_retries):
+            for attempt in range(max_retries):
+                try:
+                    from django.core.mail import get_connection
+
+                    connection = get_connection(
+                        timeout=getattr(settings, "EMAIL_TIMEOUT", 30)
+                    )
+                    email.connection = connection
+                    email.send()
+                    logger.info(
+                        f"SMTP email enviado exitosamente a {usuario.email} "
+                        f"(intento {attempt + 1})"
+                    )
+                    return  # Éxito, salir del loop
+                except (
+                    SMTPException,
+                    SMTPServerDisconnected,
+                    ConnectionError,
+                    TimeoutError,
+                    socket.error,
+                    OSError,
+                ) as e:
+                    if attempt < max_retries - 1:
+                        wait_time = retry_delay * (2**attempt)
+                        logger.warning(
+                            f"Error de conexión SMTP para {usuario.email} "
+                            f"(intento {attempt + 1}/{max_retries}): {e}. "
+                            f"Reintentando en {wait_time} segundos..."
+                        )
+                        time.sleep(wait_time)
+                    else:
+                        logger.error(
+                            f"Error enviando email SMTP para {usuario.email} "
+                            f"después de {max_retries} intentos: {e}"
+                        )
+                        raise
+
+        def _send():
+            """
+            Función interna que decide el proveedor y se ejecuta en un hilo del pool
+            para no bloquear la petición HTTP.
+            """
+            try:
+                if getattr(settings, "SENDGRID_API_KEY", ""):
+                    _send_via_sendgrid()
+                else:
+                    _send_via_smtp()
+            except Exception:
+                # Fallback: si SendGrid falla, intentar SMTP, si no se intentó ya
+                if getattr(settings, "SENDGRID_API_KEY", ""):
                     try:
-                        # Usar connection con timeout configurado
-                        from django.core.mail import get_connection
-
-                        connection = get_connection(
-                            timeout=getattr(settings, 'EMAIL_TIMEOUT', 30)
-                        )
-                        email.connection = connection
-                        email.send()
-                        logger.info(
-                            f"Email enviado exitosamente a {usuario.email} (intento {attempt + 1})"
-                        )
-                        return  # Éxito, salir del loop
-                    except (
-                        SMTPException,
-                        SMTPServerDisconnected,
-                        ConnectionError,
-                        TimeoutError,
-                        socket.error,
-                        OSError,
-                    ) as e:
-                        if attempt < max_retries - 1:
-                            wait_time = retry_delay * (2**attempt)
-                            logger.warning(
-                                f"Error de conexión SMTP para {usuario.email} "
-                                f"(intento {attempt + 1}/{max_retries}): {e}. "
-                                f"Reintentando en {wait_time} segundos..."
-                            )
-                            time.sleep(wait_time)
-                        else:
-                            logger.error(
-                                f"Error enviando email para {usuario.email} "
-                                f"después de {max_retries} intentos: {e}"
-                            )
-                            try:
-                                cls._enviar_email_texto_plano(
-                                    usuario, ticket, titulo, mensaje
-                                )
-                            except Exception as e2:
-                                logger.error(
-                                    f"Fallback texto plano falló para {usuario.email}: {e2}"
-                                )
+                        _send_via_smtp()
                     except Exception as e:
                         logger.error(
-                            f"Error inesperado enviando email a {usuario.email}: {e}"
+                            f"No se pudo enviar email ni con SendGrid ni con SMTP "
+                            f"para {usuario.email}: {e}"
                         )
-                        # No reintentar para errores no relacionados con conexión
-                        break
+                else:
+                    logger.error(
+                        f"No se pudo enviar email para {usuario.email} por error inesperado"
+                    )
 
-            # Encolar el envío en el pool de hilos para que no bloquee la petición
-            try:
-                _email_executor.submit(_send)
-            except Exception as e:
-                # Si por alguna razón el pool falla, intentar envío síncrono como último recurso
-                logger.error(f"No se pudo encolar envío de email en pool: {e}")
-                _send()
-
+        # Encolar el envío en el pool de hilos para que no bloquee la petición
+        try:
+            _email_executor.submit(_send)
         except Exception as e:
-            logger.error(f"Error preparando email para {usuario.email}: {e}")
-            try:
-                cls._enviar_email_texto_plano(usuario, ticket, titulo, mensaje)
-            except Exception:
-                logger.error(f"No se pudo enviar email ni fallback para {usuario.email}")
+            # Si por alguna razón el pool falla, intentar envío síncrono como último recurso
+            logger.error(f"No se pudo encolar envío de email en pool: {e}")
+            _send()
     
     @classmethod
     def _obtener_plantilla_html(cls, usuario: User, tipo_codigo: str) -> str:

@@ -53,6 +53,8 @@ class NotificationService:
                 
         except Exception as e:
             logger.error(f"Error enviando notificaciones de ticket creado: {e}")
+            if 'errores' not in resultados:
+                resultados['errores'] = []
             resultados['errores'].append(str(e))
         
         return resultados
@@ -402,6 +404,54 @@ class NotificationService:
         
         return resultados
     
+    @classmethod
+    def enviar_notificacion_ticket_cancelado(cls, ticket: Ticket) -> Dict[str, Any]:
+        resultados = {
+            'emails_enviados': 0,
+            'emails_fallidos': 0,
+            'notificaciones_internas': 0,
+            'errores': []
+        }
+        
+        try:
+            # Notificar al cliente
+            if ticket.cliente:
+                cls._enviar_notificacion_cliente(
+                    ticket, 'ticket_cancelado',
+                    'Su ticket ha sido cancelado',
+                    f'Su ticket #{ticket.pk} "{ticket.titulo}" ha sido cancelado exitosamente.',
+                    resultados
+                )
+            
+            # Notificar al técnico (si está asignado)
+            if ticket.tecnico:
+                cls._enviar_notificacion_tecnico(
+                    ticket, 'ticket_cancelado',
+                    'Ticket cancelado',
+                    f'El ticket #{ticket.pk} "{ticket.titulo}" que tenía asignado ha sido cancelado.',
+                    resultados
+                )
+
+            # Notificar a los administradores
+            administradores = User.objects.filter(role=User.Role.ADMIN, is_active=True)
+            for admin in administradores:
+                # No notificar al admin si él mismo fue el que lo canceló (opcional, pero mejor notificar a todos)
+                cls._enviar_notificacion_admin(
+                    ticket, 'ticket_cancelado',
+                    'Ticket cancelado',
+                    f'El ticket #{ticket.pk} "{ticket.titulo}" ha sido cancelado.',
+                    resultados,
+                    usuario_destino=admin
+                )
+                
+        except Exception as e:
+            logger.error(f"Error enviando notificaciones de ticket cancelado: {e}")
+            if 'errores' not in resultados:
+                resultados['errores'] = []
+            resultados['errores'].append(str(e))
+        
+        return resultados
+
     @classmethod
     def enviar_tecnico_cambiado(cls, ticket: Ticket, tecnico_anterior: Optional[User]) -> Dict[str, Any]:
         resultados = {

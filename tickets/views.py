@@ -1,7 +1,8 @@
 from rest_framework.generics import ListCreateAPIView, RetrieveAPIView, UpdateAPIView, ListAPIView
-from rest_framework import status
+from rest_framework.permissions import AllowAny
+from rest_framework import status, serializers
 from rest_framework.response import Response
-from tickets.permissions import IsAdmin, IsAdminOrTechnician, IsClient, IsTechnician, IsAdminOrTechnicianOrClient, IsAuthenticated
+from tickets.permissions import IsAdmin, IsAdminOrTechnician, IsClient, IsTechnician, IsAdminOrTechnicianOrClient, IsAuthenticated, IsTicketOwnerOrAdmin
 from django.shortcuts import get_object_or_404
 from django.contrib.auth import get_user_model
 from django.utils import timezone
@@ -667,3 +668,136 @@ class TicketTimelineAV(RetrieveAPIView):
                 })
         
         return timeline
+
+
+# =============================================================================
+# HU13B - Historial: Vista para el historial de cambios de estado del ticket
+# =============================================================================
+class TicketHistoryAV(RetrieveAPIView):
+    """
+    Endpoint para consultar el historial completo de un ticket por su ID.
+    Solo accesible para administradores.
+    """
+    serializer_class = TicketHistorySerializer
+    permission_classes = [IsAdmin]
+    
+    def get_queryset(self):
+        ticket_id = self.kwargs.get('ticket_id')
+        if ticket_id:
+            return TicketHistory.objects.filter(ticket_id=ticket_id).order_by('-fecha')
+        return TicketHistory.objects.none()
+    
+    def get_object(self):
+        ticket_id = self.kwargs.get('ticket_id')
+        ticket = get_object_or_404(Ticket, pk=ticket_id)
+        
+        user_document = self.request.query_params.get('user_document')
+        if user_document:
+            try:
+                user = User.objects.get(document=user_document)
+            except User.DoesNotExist:
+                return Response({
+                    'error': 'Usuario no encontrado',
+                    'message': 'El documento de usuario proporcionado no existe'
+                }, status=status.HTTP_400_BAD_REQUEST)
+        else:
+            user = getattr(self.request, 'user', None)
+            if not user or not user.is_authenticated:
+                return Response({
+                    'error': 'Usuario requerido',
+                    'message': 'Debe proporcionar user_document como parámetro de consulta'
+                }, status=status.HTTP_400_BAD_REQUEST)
+        
+        if user.role != User.Role.ADMIN:
+            return Response({
+                'error': 'No autorizado',
+                'message': 'Solo los administradores pueden consultar el historial de tickets'
+            }, status=status.HTTP_403_FORBIDDEN)
+        
+        return self.get_queryset()
+    
+    def retrieve(self, request, *args, **kwargs):
+        queryset = self.get_object()
+        if isinstance(queryset, Response):
+            return queryset
+        
+        serializer = self.get_serializer(queryset, many=True)
+        ticket_id = self.kwargs.get('ticket_id')
+        ticket = get_object_or_404(Ticket, pk=ticket_id)
+        
+        return Response({
+            'message': 'Historial del ticket obtenido exitosamente',
+            'ticket_id': ticket_id,
+            'ticket_titulo': ticket.titulo,
+            'estado_actual': ticket.estado.nombre if ticket.estado else 'Sin estado',
+            'tecnico_actual': ticket.tecnico.get_full_name() if ticket.tecnico else 'Sin técnico asignado',
+            'total_registros': queryset.count(),
+            'historial': serializer.data
+        }, status=status.HTTP_200_OK)
+
+
+class TicketCancelAV(UpdateAPIView):
+    """
+    Endpoint para que el cliente o el administrador cancelen un ticket.
+    """
+    permission_classes = [IsTicketOwnerOrAdmin]
+    serializer_class = serializers.Serializer
+
+    def get_object(self):
+        return get_object_or_404(Ticket, pk=self.kwargs.get('ticket_id'))
+
+    def _get_user(self, request):
+        user_document = request.query_params.get('user_document')
+        if user_document:
+            try:
+                return User.objects.get(document=user_document)
+            except User.DoesNotExist:
+                return None
+        return getattr(request, 'user', None)
+
+    def put(self, request, *args, **kwargs):
+        ticket = self.get_object()
+        user = self._get_user(request)
+
+        if not user or not user.is_authenticated:
+            return Response({
+                'error': 'No autenticado',
+                'message': 'Debe iniciar sesión para realizar esta acción.'
+            }, status=status.HTTP_401_UNAUTHORIZED)
+
+        if ticket.estado.es_final:
+            estado_texto = "finalizado" if ticket.estado.codigo == "finalized" else "cancelado"
+            return Response({
+                'error': 'No permitido',
+                'message': f'El ticket ya está {estado_texto} y no puede ser modificado.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            estado_cancelado = Estado.objects.get(codigo="canceled")
+        except Estado.DoesNotExist:
+            return Response({
+                'error': 'Error de configuración',
+                'message': 'El estado "Cancelado" no está configurado en el sistema.'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        estado_anterior = ticket.estado
+        ticket.estado = estado_cancelado
+        ticket.save()
+
+        TicketHistory.crear_entrada_historial(
+            ticket=ticket,
+            accion=f"Ticket cancelado por {user.role} ({user.get_full_name()})",
+            realizado_por=user,
+            estado_anterior=estado_anterior.nombre
+        )
+
+        try:
+            NotificationService.enviar_notificacion_ticket_cancelado(ticket)
+        except Exception as e:
+            logger.error(f"Error enviando notificaciones de cancelación: {e}")
+
+        return Response({
+            'message': 'Ticket cancelado correctamente.',
+            'ticket_id': ticket.pk,
+            'nuevo_estado': estado_cancelado.nombre
+        }, status=status.HTTP_200_OK)

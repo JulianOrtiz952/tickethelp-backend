@@ -14,3 +14,4 @@ media/
 .idea/
 # env
 .env
+.venv

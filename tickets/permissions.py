@@ -127,3 +127,18 @@ class IsAdminOrTechnicianOrClient(permissions.BasePermission):
             request.user.is_authenticated and 
             request.user.role in [User.Role.ADMIN, User.Role.TECH, User.Role.CLIENT]
         )
+
+class IsClientOwnerOrAdmin(permissions.BasePermission):
+    """
+    Permiso para que solo el cliente dueño o un administrador puedan realizar la acción.
+    """
+    def has_object_permission(self, request, view, obj):
+        if not (request.user and request.user.is_authenticated):
+            return False
+        
+        # Admin total
+        if request.user.role == User.Role.ADMIN:
+            return True
+            
+        # Solo el cliente que es dueño del ticket
+        return request.user.role == User.Role.CLIENT and obj.cliente == request.user

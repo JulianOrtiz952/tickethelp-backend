@@ -765,11 +765,12 @@ class TicketCancelAV(UpdateAPIView):
                 'message': 'Debe iniciar sesión para realizar esta acción.'
             }, status=status.HTTP_401_UNAUTHORIZED)
 
-        if ticket.estado.es_final:
-            estado_texto = "finalizado" if ticket.estado.codigo == "finalized" else "cancelado"
+        # Solo se permite cancelar si el ticket está 'open' o 'diagnosis'
+        estados_permitidos = ['open', 'diagnosis']
+        if ticket.estado.codigo not in estados_permitidos:
             return Response({
                 'error': 'No permitido',
-                'message': f'El ticket ya está {estado_texto} y no puede ser modificado.'
+                'message': f'No se puede cancelar un ticket en estado "{ticket.estado.nombre}". Solo se pueden cancelar tickets en estado Abierto o En diagnóstico.'
             }, status=status.HTTP_400_BAD_REQUEST)
 
         try:
@@ -800,9 +801,6 @@ class TicketCancelAV(UpdateAPIView):
             'message': 'Ticket cancelado correctamente.',
             'ticket_id': ticket.pk,
             'nuevo_estado': estado_cancelado.nombre
-<<<<<<< HEAD
-        }, status=status.HTTP_200_OK)
-=======
         }, status=status.HTTP_200_OK)
 
 
@@ -895,4 +893,3 @@ class TicketAttachmentAV(ListCreateAPIView):
             'message': 'Archivo adjuntado correctamente.',
             'adjunto': read_serializer.data,
         }, status=status.HTTP_201_CREATED)
->>>>>>> 4f4f62b (ADD: Can upload files to the ticket)

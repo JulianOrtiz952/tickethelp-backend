@@ -194,7 +194,7 @@ def ticket_attachment_upload_path(instance, filename):
 class TicketAttachment(models.Model):
     """
     Archivo adjunto vinculado a un ticket.
-    Solo el cliente dueño del ticket puede subir archivos.
+    Solo un administrador puede subir archivos.
     """
     ticket = models.ForeignKey(
         Ticket,

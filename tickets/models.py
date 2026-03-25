@@ -4,6 +4,7 @@ from django.utils import timezone
 from django.db.models.signals import post_save, pre_save
 from django.dispatch import receiver
 import json
+import os
 
 class Estado(models.Model):
     # Identifica el estado por clave corta y nombre legible
@@ -178,4 +179,44 @@ def store_previous_values(sender, instance, **kwargs):
         instance._old_estado = None
         instance._old_tecnico = None
 
-    
+
+# =============================================================================
+# Adjuntos de Ticket
+# =============================================================================
+
+def ticket_attachment_upload_path(instance, filename):
+    """Genera la ruta de almacenamiento: media/tickets/<ticket_id>/attachments/<filename>"""
+    ext = os.path.splitext(filename)[1].lower()
+    safe_name = os.path.splitext(os.path.basename(filename))[0]
+    return f"tickets/{instance.ticket.pk}/attachments/{safe_name}{ext}"
+
+
+class TicketAttachment(models.Model):
+    """
+    Archivo adjunto vinculado a un ticket.
+    Solo el cliente dueño del ticket puede subir archivos.
+    """
+    ticket = models.ForeignKey(
+        Ticket,
+        on_delete=models.CASCADE,
+        related_name="adjuntos",
+    )
+    subido_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        on_delete=models.SET_NULL,
+        related_name="adjuntos_subidos",
+    )
+    archivo = models.FileField(upload_to=ticket_attachment_upload_path)
+    nombre_original = models.CharField(max_length=255)
+    tipo_mime = models.CharField(max_length=100, blank=True)
+    tamano_bytes = models.PositiveIntegerField(default=0)
+    creado_en = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-creado_en"]
+        verbose_name = "Adjunto de Ticket"
+        verbose_name_plural = "Adjuntos de Tickets"
+
+    def __str__(self):
+        return f"Adjunto #{self.pk} - Ticket #{self.ticket.pk} - {self.nombre_original}"

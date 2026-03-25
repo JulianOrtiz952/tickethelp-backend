@@ -1,8 +1,9 @@
 from rest_framework import serializers
 from django.db.models import Count, Max
 from django.utils import timezone
+from django.conf import settings as django_settings
 from users.models import User
-from tickets.models import Ticket, Estado, StateChangeRequest
+from tickets.models import Ticket, Estado, StateChangeRequest, TicketAttachment
 from tickets.models import TicketHistory
 
 class TicketSerializer(serializers.ModelSerializer):
@@ -299,3 +300,79 @@ class TicketTimelineSerializer(serializers.Serializer):
     ticket_id = serializers.IntegerField()
     estado_actual = serializers.CharField()
     timeline = TimelineItemSerializer(many=True)
+
+
+# =============================================================================
+# Adjuntos de Ticket
+# =============================================================================
+
+class TicketAttachmentListSerializer(serializers.ModelSerializer):
+    """Serializer para listar adjuntos. Solo devuelve nombre original y URL."""
+    url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = TicketAttachment
+        fields = ['nombre_original', 'url']
+
+    def get_url(self, obj):
+        request = self.context.get('request')
+        if obj.archivo and request:
+            return request.build_absolute_uri(obj.archivo.url)
+        return obj.archivo.url if obj.archivo else None
+
+
+class TicketAttachmentCreateResponseSerializer(serializers.ModelSerializer):
+    """Serializer para la respuesta al crear un adjunto. Solo devuelve fecha de creación y URL."""
+    url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = TicketAttachment
+        fields = ['creado_en', 'url']
+
+    def get_url(self, obj):
+        request = self.context.get('request')
+        if obj.archivo and request:
+            return request.build_absolute_uri(obj.archivo.url)
+        return obj.archivo.url if obj.archivo else None
+
+
+class TicketAttachmentUploadSerializer(serializers.Serializer):
+    """Serializer de ESCRITURA. Valida tamaño y tipo MIME antes de crear el adjunto."""
+    archivo = serializers.FileField(required=True)
+
+    def validate_archivo(self, file):
+        max_size = getattr(django_settings, 'MAX_UPLOAD_SIZE', 10 * 1024 * 1024)
+        allowed_mimes = getattr(
+            django_settings,
+            'ALLOWED_UPLOAD_MIME_TYPES',
+            ['image/jpeg', 'image/png', 'application/pdf'],
+        )
+
+        if file.size > max_size:
+            raise serializers.ValidationError(
+                f"El archivo es demasiado grande. Tamaño máximo permitido: {max_size // (1024 * 1024)} MB."
+            )
+
+        content_type = getattr(file, 'content_type', '')
+        if content_type and content_type not in allowed_mimes:
+            raise serializers.ValidationError(
+                f"Tipo de archivo no permitido: {content_type}. "
+                f"Tipos permitidos: {', '.join(allowed_mimes)}."
+            )
+
+        return file
+
+    def create(self, validated_data):
+        file = validated_data['archivo']
+        ticket = self.context['ticket']
+        subido_por = self.context['subido_por']
+
+        adjunto = TicketAttachment.objects.create(
+            ticket=ticket,
+            subido_por=subido_por,
+            archivo=file,
+            nombre_original=file.name,
+            tipo_mime=getattr(file, 'content_type', ''),
+            tamano_bytes=file.size,
+        )
+        return adjunto

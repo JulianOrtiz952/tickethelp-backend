@@ -2,7 +2,8 @@ from django.urls import path
 from tickets.views import (
     TicketAV, EstadoAV, LeastBusyTechnicianAV, ChangeTechnicianAV, 
     ActiveTechniciansAV, StateChangeAV, PendingApprovalsAV, TicketListView, 
-    TicketTimelineAV, TestingApprovalAV, TicketHistoryAV, TicketCancelAV
+    TicketTimelineAV, TestingApprovalAV, TicketHistoryAV, TicketCancelAV,
+    TicketAttachmentAV,
 )
 
 urlpatterns = [
@@ -42,4 +43,11 @@ urlpatterns = [
     path('tickets/testing-approval/<int:ticket_id>/', TestingApprovalAV.as_view(), name="ticket-testing-approval"),
     # Cancelar un ticket (por cliente o administrador)
     path('tickets/cancel/<int:ticket_id>/', TicketCancelAV.as_view(), name="cancel-ticket"),
+    # =============================================================================
+    # Adjuntos de Ticket
+    # =============================================================================
+    # GET  → lista los adjuntos del ticket (cliente dueño, técnico asignado, admin)
+    # POST → sube un nuevo archivo adjunto (solo el cliente dueño del ticket)
+    # =============================================================================
+    path('client/tickets/<int:ticket_id>/attachments/', TicketAttachmentAV.as_view(), name="ticket-attachments"),
 ]

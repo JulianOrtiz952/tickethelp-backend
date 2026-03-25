@@ -123,10 +123,36 @@ STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 
 STORAGES = {
+    "default": {
+        "BACKEND": "django.core.files.storage.FileSystemStorage",
+    },
     "staticfiles": {
         "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"
-    }
+    },
 }
+
+# -----------------------------
+# ARCHIVOS MEDIA (adjuntos)
+# -----------------------------
+MEDIA_URL = "/media/"
+MEDIA_ROOT = BASE_DIR / "media"
+
+# Tamaño máximo de archivo adjunto: 10 MB
+MAX_UPLOAD_SIZE = 10 * 1024 * 1024  # bytes
+
+# Tipos de archivo permitidos (MIME types)
+ALLOWED_UPLOAD_MIME_TYPES = [
+    "image/jpeg",
+    "image/png",
+    "image/gif",
+    "image/webp",
+    "application/pdf",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.ms-excel",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "text/plain",
+]
 
 # -----------------------------
 # DEFAULT AUTO FIELD

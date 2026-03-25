@@ -13,12 +13,12 @@ from datetime import timedelta
 import tickets
 from django.db.models import Q
 import logging
-from tickets.models import Ticket, Estado, StateChangeRequest
+from tickets.models import Ticket, Estado, StateChangeRequest, TicketAttachment
 from tickets.serializers import (
     TicketSerializer, EstadoSerializer, LeastBusyTechnicianSerializer,
     ChangeTechnicianSerializer, ActiveTechnicianSerializer, StateChangeSerializer,
     StateApprovalSerializer, PendingApprovalSerializer,
-    TicketTimelineSerializer
+    TicketTimelineSerializer, TicketAttachmentListSerializer, TicketAttachmentCreateResponseSerializer, TicketAttachmentUploadSerializer
 )
 from notifications.services import NotificationService
 from rest_framework import viewsets, permissions
@@ -925,3 +925,94 @@ class TicketCancelAV(UpdateAPIView):
             'ticket_id': ticket.pk,
             'nuevo_estado': estado_cancelado.nombre
         }, status=status.HTTP_200_OK)
+
+
+class TicketAttachmentAV(ListCreateAPIView):
+    """
+    GET  /api/client/tickets/<ticket_id>/attachments/  → Lista los adjuntos del ticket.
+    POST /api/client/tickets/<ticket_id>/attachments/  → Sube un nuevo archivo adjunto.
+
+    Permisos:
+    - Solo el cliente dueño del ticket puede subir archivos (POST).
+    - El cliente dueño, el técnico asignado y el administrador pueden ver la lista (GET).
+    - El ticket no debe estar en estado final para permitir subidas.
+    """
+    permission_classes = [IsAuthenticated]
+    serializer_class = TicketAttachmentUploadSerializer
+
+    def _get_ticket(self):
+        return get_object_or_404(Ticket, pk=self.kwargs.get('ticket_id'))
+
+    def _check_read_permission(self, user, ticket):
+        """Permite leer al cliente dueño, técnico asignado y admin."""
+        if user.role == User.Role.ADMIN:
+            return True
+        if user.role == User.Role.TECH and ticket.tecnico == user:
+            return True
+        if user.role == User.Role.CLIENT and ticket.cliente == user:
+            return True
+        return False
+
+    def _check_upload_permission(self, user, ticket):
+        """Solo el cliente dueño puede subir archivos."""
+        return user.role == User.Role.CLIENT and ticket.cliente == user
+
+    def get_queryset(self):
+        ticket = self._get_ticket()
+        return TicketAttachment.objects.filter(ticket=ticket).select_related('subido_por')
+
+    def list(self, request, *args, **kwargs):
+        ticket = self._get_ticket()
+        user = request.user
+
+        if not user.is_authenticated or not self._check_read_permission(user, ticket):
+            return Response({
+                'error': 'No autorizado',
+                'message': 'No tiene permiso para ver los adjuntos de este ticket.'
+            }, status=status.HTTP_403_FORBIDDEN)
+
+        queryset = self.get_queryset()
+        serializer = TicketAttachmentListSerializer(queryset, many=True, context={'request': request})
+        return Response({
+            'message': 'Adjuntos del ticket',
+            'ticket_id': ticket.pk,
+            'total_adjuntos': queryset.count(),
+            'adjuntos': serializer.data,
+        }, status=status.HTTP_200_OK)
+
+    def create(self, request, *args, **kwargs):
+        ticket = self._get_ticket()
+        user = request.user
+
+        if not user.is_authenticated or not self._check_upload_permission(user, ticket):
+            return Response({
+                'error': 'No autorizado',
+                'message': 'Solo el cliente dueño del ticket puede adjuntar archivos.'
+            }, status=status.HTTP_403_FORBIDDEN)
+
+        # No se puede adjuntar a un ticket finalizado o cancelado
+        if ticket.estado.es_final:
+            return Response({
+                'error': 'Ticket cerrado',
+                'message': 'No se pueden adjuntar archivos a un ticket finalizado o cancelado.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        serializer = TicketAttachmentUploadSerializer(
+            data=request.data,
+            context={'ticket': ticket, 'subido_por': user, 'request': request}
+        )
+        serializer.is_valid(raise_exception=True)
+        adjunto = serializer.save()
+
+        # Registrar en historial
+        TicketHistory.crear_entrada_historial(
+            ticket=ticket,
+            accion=f"Archivo adjunto agregado: '{adjunto.nombre_original}'",
+            realizado_por=user,
+        )
+
+        read_serializer = TicketAttachmentCreateResponseSerializer(adjunto, context={'request': request})
+        return Response({
+            'message': 'Archivo adjuntado correctamente.',
+            'adjunto': read_serializer.data,
+        }, status=status.HTTP_201_CREATED)

@@ -1,8 +1,11 @@
 from rest_framework.generics import ListCreateAPIView, RetrieveAPIView, UpdateAPIView, ListAPIView
-from rest_framework import status
+from rest_framework import status, serializers
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny
-from tickets.permissions import IsAdmin, IsAdminOrTechnician, IsClient, IsTechnician, IsAdminOrTechnicianOrClient, IsAuthenticated
+from tickets.permissions import (
+    IsAdmin, IsAdminOrTechnician, IsClient, IsTechnician, 
+    IsAdminOrTechnicianOrClient, IsAuthenticated, IsTicketOwnerOrAdmin
+)
 from django.shortcuts import get_object_or_404
 from django.contrib.auth import get_user_model
 from django.utils import timezone
@@ -853,3 +856,72 @@ class TicketTimelineAV(RetrieveAPIView):
                 })
         
         return timeline
+
+class TicketCancelAV(UpdateAPIView):
+    """
+    Endpoint para que el cliente o el administrador cancelen un ticket.
+    """
+    permission_classes = [IsTicketOwnerOrAdmin]
+    serializer_class = serializers.Serializer  # No se necesitan campos adicionales
+
+    def get_object(self):
+        return get_object_or_404(Ticket, pk=self.kwargs.get('ticket_id'))
+
+    def _get_user(self, request):
+        user_document = request.query_params.get('user_document')
+        if user_document:
+            try:
+                return User.objects.get(document=user_document)
+            except User.DoesNotExist:
+                return None
+        return getattr(request, 'user', None)
+
+    def put(self, request, *args, **kwargs):
+        ticket = self.get_object()
+        user = self._get_user(request)
+
+        if not user or not user.is_authenticated:
+            return Response({
+                'error': 'No autenticado',
+                'message': 'Debe iniciar sesión para realizar esta acción.'
+            }, status=status.HTTP_401_UNAUTHORIZED)
+
+        # Validar si el ticket ya está finalizado o cancelado
+        if ticket.estado.es_final:
+            estado_texto = "finalizado" if ticket.estado.codigo == "finalized" else "cancelado"
+            return Response({
+                'error': 'No permitido',
+                'message': f'El ticket ya está {estado_texto} y no puede ser modificado.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            estado_cancelado = Estado.objects.get(codigo="canceled")
+        except Estado.DoesNotExist:
+            return Response({
+                'error': 'Error de configuración',
+                'message': 'El estado "Cancelado" no está configurado en el sistema.'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        estado_anterior = ticket.estado
+        ticket.estado = estado_cancelado
+        ticket.save()
+
+        # Registrar en historial
+        TicketHistory.crear_entrada_historial(
+            ticket=ticket,
+            accion=f"Ticket cancelado por {user.role} ({user.get_full_name()})",
+            realizado_por=user,
+            estado_anterior=estado_anterior.nombre
+        )
+
+        # Enviar notificaciones
+        try:
+            NotificationService.enviar_notificacion_ticket_cancelado(ticket)
+        except Exception as e:
+            logger.error(f"Error enviando notificaciones de cancelación: {e}")
+
+        return Response({
+            'message': 'Ticket cancelado correctamente.',
+            'ticket_id': ticket.pk,
+            'nuevo_estado': estado_cancelado.nombre
+        }, status=status.HTTP_200_OK)

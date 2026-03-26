@@ -865,7 +865,9 @@ class TicketCancelAV(UpdateAPIView):
     serializer_class = serializers.Serializer  # No se necesitan campos adicionales
 
     def get_object(self):
-        return get_object_or_404(Ticket, pk=self.kwargs.get('ticket_id'))
+        obj = get_object_or_404(Ticket, pk=self.kwargs.get('ticket_id'))
+        self.check_object_permissions(self.request, obj)
+        return obj
 
     def _get_user(self, request):
         user_document = request.query_params.get('user_document')

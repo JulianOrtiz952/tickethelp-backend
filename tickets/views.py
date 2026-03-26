@@ -929,11 +929,11 @@ class TicketCancelAV(UpdateAPIView):
 
 class TicketAttachmentAV(ListCreateAPIView):
     """
-    GET  /api/client/tickets/<ticket_id>/attachments/  → Lista los adjuntos del ticket.
-    POST /api/client/tickets/<ticket_id>/attachments/  → Sube un nuevo archivo adjunto.
+    GET  /api/tickets/<ticket_id>/attachments/  → Lista los adjuntos del ticket.
+    POST /api/tickets/<ticket_id>/attachments/  → Sube un nuevo archivo adjunto.
 
     Permisos:
-    - Solo el cliente dueño del ticket puede subir archivos (POST).
+    - Solo el administrador puede subir archivos (POST).
     - El cliente dueño, el técnico asignado y el administrador pueden ver la lista (GET).
     - El ticket no debe estar en estado final para permitir subidas.
     """
@@ -954,8 +954,8 @@ class TicketAttachmentAV(ListCreateAPIView):
         return False
 
     def _check_upload_permission(self, user, ticket):
-        """Solo el cliente dueño puede subir archivos."""
-        return user.role == User.Role.CLIENT and ticket.cliente == user
+        """Solo el administrador puede subir archivos."""
+        return user.role == User.Role.ADMIN
 
     def get_queryset(self):
         ticket = self._get_ticket()
@@ -987,7 +987,7 @@ class TicketAttachmentAV(ListCreateAPIView):
         if not user.is_authenticated or not self._check_upload_permission(user, ticket):
             return Response({
                 'error': 'No autorizado',
-                'message': 'Solo el cliente dueño del ticket puede adjuntar archivos.'
+                'message': 'Solo el administrador puede adjuntar archivos a los tickets.'
             }, status=status.HTTP_403_FORBIDDEN)
 
         # No se puede adjuntar a un ticket finalizado o cancelado

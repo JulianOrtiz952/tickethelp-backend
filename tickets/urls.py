@@ -47,7 +47,7 @@ urlpatterns = [
     # Adjuntos de Ticket
     # =============================================================================
     # GET  → lista los adjuntos del ticket (cliente dueño, técnico asignado, admin)
-    # POST → sube un nuevo archivo adjunto (solo el cliente dueño del ticket)
+    # POST → sube un nuevo archivo adjunto (solo administrador)
     # =============================================================================
-    path('client/tickets/<int:ticket_id>/attachments/', TicketAttachmentAV.as_view(), name="ticket-attachments"),
+    path('tickets/<int:ticket_id>/attachments/', TicketAttachmentAV.as_view(), name="ticket-attachments"),
 ]

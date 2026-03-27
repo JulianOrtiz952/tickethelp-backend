@@ -176,15 +176,9 @@ class StateChangeSerializer(serializers.Serializer):
             })
         
         if not is_valid_transition:
-            # Si es estado 3, mostrar que puede ir a 4 o 6
-            if current_id == 3:
-                raise serializers.ValidationError({
-                    "to_state": f"Transición inválida. Desde 'En reparación' (3) solo se permite avanzar a 'Pruebas' (6)."
-                })
-            else:
-                raise serializers.ValidationError({
-                    "to_state": f"Transición inválida. Solo se permite avanzar de {current_id} a {next_allowed_id}."
-                })
+            raise serializers.ValidationError({
+                "to_state": "Hubo un cambio reciente en el estado del ticket u otra persona lo modificó. La pantalla se ha actualizado para mostrar su estado actual."
+            })
 
         # (Opcional) valida que el estado esté activo si manejas 'es_activo'
         if hasattr(to_state, 'es_activo') and not to_state.es_activo:

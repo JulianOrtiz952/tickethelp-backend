@@ -949,9 +949,9 @@ class TicketAttachmentAV(ListCreateAPIView):
         """Permite leer al cliente dueño, técnico asignado y admin."""
         if user.role == User.Role.ADMIN:
             return True
-        if user.role == User.Role.TECH and ticket.tecnico == user:
+        if user.role == User.Role.TECH and ticket.tecnico_id == user.pk:
             return True
-        if user.role == User.Role.CLIENT and ticket.cliente == user:
+        if user.role == User.Role.CLIENT and ticket.cliente_id == user.pk:
             return True
         return False
 

@@ -15,6 +15,7 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework import status
 import re
+from .throttles import LoginRateThrottle
 
 from .serializers import (
     UserReadSerializer,
@@ -212,7 +213,6 @@ class ChangePasswordByIdView(generics.GenericAPIView):
     
 # Función para consultar cliente por documento con manejo de error personalizado
 @api_view(['GET'])
-@permission_classes([IsAdminOrTechnicianOrClient])
 @permission_classes([IsAdmin])
 def get_client_by_document(request, document):
     """
@@ -293,6 +293,7 @@ class EmailTokenObtainPairView(TokenObtainPairView):
     - 400: Datos de entrada inválidos
     """
     serializer_class = EmailTokenObtainPairSerializer
+    throttle_classes = [LoginRateThrottle]
     
     def post(self, request, *args, **kwargs):
         """
@@ -387,7 +388,13 @@ class AuthChangePasswordView(APIView):
         - Escenario 18: Valida que la contraseña no esté vacía
         """
         user = request.user
+        current_password = request.data.get("current_password")
         new_password = request.data.get("new_password")
+
+        if not current_password:
+            return Response({"detail": "La contraseña actual es obligatoria"}, status=400)
+        if not user.check_password(current_password):
+            return Response({"detail": "La contraseña actual es incorrecta"}, status=400)
 
         # Escenario 18 - Contraseña inválida (vacía) ✖️
         # Validar que la contraseña no esté vacía

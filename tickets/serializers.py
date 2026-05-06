@@ -1,4 +1,5 @@
 from rest_framework import serializers
+import os
 from django.db.models import Count, Max
 from django.utils import timezone
 from django.conf import settings as django_settings
@@ -353,6 +354,29 @@ class TicketAttachmentUploadSerializer(serializers.Serializer):
                 f"Tipo de archivo no permitido: {content_type}. "
                 f"Tipos permitidos: {', '.join(allowed_mimes)}."
             )
+
+        forbidden_extensions = {".exe", ".bat", ".cmd", ".php", ".sh", ".py"}
+        file_ext = os.path.splitext(file.name or "")[1].lower()
+        if file_ext in forbidden_extensions:
+            raise serializers.ValidationError("Extensión de archivo no permitida por seguridad.")
+
+        current_pos = file.tell() if hasattr(file, "tell") else 0
+        header = file.read(512)
+        if hasattr(file, "seek"):
+            file.seek(current_pos)
+
+        if isinstance(header, str):
+            header = header.encode("utf-8", errors="ignore")
+
+        lower_header = header.lower()
+        script_markers = (b"<?php", b"#!/bin/", b"#!/usr/bin/", b"@echo off", b"powershell", b"import os")
+        executable_markers = (b"mz", b"pk\x03\x04")
+
+        if any(marker in lower_header for marker in script_markers):
+            raise serializers.ValidationError("El contenido del archivo no es seguro.")
+
+        if lower_header.startswith(executable_markers[0]):
+            raise serializers.ValidationError("No se permiten ejecutables en adjuntos.")
 
         return file
 

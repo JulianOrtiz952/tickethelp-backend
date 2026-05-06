@@ -1,5 +1,4 @@
 from rest_framework.generics import ListCreateAPIView, RetrieveAPIView, UpdateAPIView, ListAPIView
-from rest_framework.permissions import AllowAny
 from rest_framework import status, serializers
 from rest_framework.response import Response
 from tickets.permissions import IsAdmin, IsAdminOrTechnician, IsClient, IsTechnician, IsAdminOrTechnicianOrClient, IsAuthenticated, IsTicketOwnerOrAdmin
@@ -38,14 +37,7 @@ class TicketAV(ListCreateAPIView):
             }, status=status.HTTP_400_BAD_REQUEST)
         
         # Obtener el usuario que está creando el ticket
-        user_document = request.query_params.get('user_document')
-        if user_document:
-            try:
-                usuario_creador = User.objects.get(document=user_document)
-            except User.DoesNotExist:
-                usuario_creador = None
-        else:
-            usuario_creador = getattr(request, 'user', None)
+        usuario_creador = request.user if request.user.is_authenticated else None
         
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -123,14 +115,7 @@ class ChangeTechnicianAV(UpdateAPIView):
             old_technician = ticket.tecnico
             
             # Obtener el usuario que está realizando el cambio
-            user_document = request.query_params.get('user_document')
-            if user_document:
-                try:
-                    usuario_cambio = User.objects.get(document=user_document)
-                except User.DoesNotExist:
-                    usuario_cambio = None
-            else:
-                usuario_cambio = getattr(request, 'user', None)
+            usuario_cambio = request.user if request.user.is_authenticated else None
 
             if new_technician != old_technician:
                 ticket.tecnico = new_technician
@@ -208,13 +193,7 @@ class StateChangeAV(UpdateAPIView):
     
 
     def _get_user(self, request):
-        user_document = request.query_params.get('user_document')
-        if user_document:
-            try:
-                return User.objects.get(document=user_document)
-            except User.DoesNotExist:
-                return None
-        return getattr(request, 'user', None)
+        return request.user if request.user.is_authenticated else None
 
     def put(self, request, *args, **kwargs):
         ticket = self.get_object()
@@ -392,13 +371,7 @@ class TestingApprovalAV(UpdateAPIView):
         return get_object_or_404(Ticket, pk=ticket_id)
 
     def _get_user(self, request):
-        user_document = request.query_params.get('user_document')
-        if user_document:
-            try:
-                return User.objects.get(document=user_document)
-            except User.DoesNotExist:
-                return None
-        return getattr(request, 'user', None)
+        return request.user if request.user.is_authenticated else None
 
     def _process(self, request, *args, **kwargs):
         ticket = self.get_object()
@@ -591,18 +564,7 @@ class TicketListView(ListAPIView):
         # Para clientes, usar siempre el usuario autenticado por seguridad
         if self.request.user.role == User.Role.CLIENT:
             return Ticket.objects.filter(cliente=self.request.user)
-        
-        # Para admin y técnico, permitir consultar por user_document o usar el usuario autenticado
-        user_document = self.request.query_params.get('user_document')
-        
-        if user_document and user_document.strip():
-            try:
-                user = User.objects.get(document=user_document)
-            except User.DoesNotExist:
-                return Ticket.objects.none()
-        else:
-            # Si no se proporciona user_document, usar el usuario autenticado
-            user = self.request.user
+        user = self.request.user
 
         if user.role == User.Role.TECH:
             return Ticket.objects.filter(tecnico=user)
@@ -641,7 +603,7 @@ class TicketHistoryAV(RetrieveAPIView):
     Solo accesible para administradores.
     """
     serializer_class = TicketHistorySerializer
-    permission_classes = [AllowAny]  # Temporal, cambiar a IsAdminUser cuando haya autenticación
+    permission_classes = [IsAuthenticated]
     
     def get_queryset(self):
         ticket_id = self.kwargs.get('ticket_id')
@@ -655,24 +617,8 @@ class TicketHistoryAV(RetrieveAPIView):
         # Validar que el ticket existe
         ticket = get_object_or_404(Ticket, pk=ticket_id)
         
-        # Validar que el usuario es administrador
-        user_document = self.request.query_params.get('user_document')
-        if user_document:
-            try:
-                user = User.objects.get(document=user_document)
-            except User.DoesNotExist:
-                return Response({
-                    'error': 'Usuario no encontrado',
-                    'message': 'El documento de usuario proporcionado no existe'
-                }, status=status.HTTP_400_BAD_REQUEST)
-        else:
-            user = getattr(self.request, 'user', None)
-            if not user or not user.is_authenticated:
-                return Response({
-                    'error': 'Usuario requerido',
-                    'message': 'Debe proporcionar user_document como parámetro de consulta'
-                }, status=status.HTTP_400_BAD_REQUEST)
-        
+        # Validar que el usuario autenticado es administrador
+        user = self.request.user
         if user.role != User.Role.ADMIN:
             return Response({
                 'error': 'No autorizado',
@@ -872,7 +818,7 @@ class TicketHistoryAV(RetrieveAPIView):
     Solo accesible para administradores.
     """
     serializer_class = TicketHistorySerializer
-    permission_classes = [IsAdmin]
+    permission_classes = [IsAuthenticated]
     
     def get_queryset(self):
         ticket_id = self.kwargs.get('ticket_id')
@@ -884,23 +830,7 @@ class TicketHistoryAV(RetrieveAPIView):
         ticket_id = self.kwargs.get('ticket_id')
         ticket = get_object_or_404(Ticket, pk=ticket_id)
         
-        user_document = self.request.query_params.get('user_document')
-        if user_document:
-            try:
-                user = User.objects.get(document=user_document)
-            except User.DoesNotExist:
-                return Response({
-                    'error': 'Usuario no encontrado',
-                    'message': 'El documento de usuario proporcionado no existe'
-                }, status=status.HTTP_400_BAD_REQUEST)
-        else:
-            user = getattr(self.request, 'user', None)
-            if not user or not user.is_authenticated:
-                return Response({
-                    'error': 'Usuario requerido',
-                    'message': 'Debe proporcionar user_document como parámetro de consulta'
-                }, status=status.HTTP_400_BAD_REQUEST)
-        
+        user = self.request.user
         if user.role != User.Role.ADMIN:
             return Response({
                 'error': 'No autorizado',
@@ -942,13 +872,7 @@ class TicketCancelAV(UpdateAPIView):
         return obj
 
     def _get_user(self, request):
-        user_document = request.query_params.get('user_document')
-        if user_document:
-            try:
-                return User.objects.get(document=user_document)
-            except User.DoesNotExist:
-                return None
-        return getattr(request, 'user', None)
+        return request.user if request.user.is_authenticated else None
 
     def put(self, request, *args, **kwargs):
         ticket = self.get_object()

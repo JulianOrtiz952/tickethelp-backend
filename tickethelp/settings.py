@@ -1,4 +1,5 @@
 import os
+import secrets
 from pathlib import Path
 import dj_database_url
 from dotenv import load_dotenv
@@ -11,10 +12,16 @@ load_dotenv()
 # -----------------------------
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-SECRET_KEY = os.getenv("SECRET_KEY", "dev-secret")  # En prod usar env
+SECRET_KEY = os.getenv("SECRET_KEY", secrets.token_urlsafe(64))
+if len(SECRET_KEY) < 50 or SECRET_KEY == "dev-secret":
+    SECRET_KEY = secrets.token_urlsafe(64)
 DEBUG = os.getenv("DEBUG", "True") == "True"
 
-ALLOWED_HOSTS = ["*"]
+ALLOWED_HOSTS = [
+    host.strip()
+    for host in os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
+    if host.strip() and host.strip() != "*"
+]
 
 # Para CSRF en producción (Render, Railway, etc.)
 CSRF_TRUSTED_ORIGINS = [
@@ -193,6 +200,16 @@ REST_FRAMEWORK = {
     "DEFAULT_PERMISSION_CLASSES": [
         "rest_framework.permissions.IsAuthenticated",
     ],
+    "DEFAULT_THROTTLE_CLASSES": [
+        "rest_framework.throttling.AnonRateThrottle",
+        "rest_framework.throttling.UserRateThrottle",
+        "users.throttles.LoginRateThrottle",
+    ],
+    "DEFAULT_THROTTLE_RATES": {
+        "anon": "100/hour",
+        "user": "1000/hour",
+        "login": "5/5min",
+    },
 }
 
 # -----------------------------

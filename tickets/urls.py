@@ -23,6 +23,20 @@ urlpatterns = [
     path('estados/', EstadoAV.as_view(), name="estado_list"),
     # Consultar los tickets asignados al técnico
     path('tickets/consulta/', TicketListView.as_view(), name="ticket-consulta"),
+    
+    # =============================================================================
+# HU13B - Historial: Endpoint para consultar el historial de cambios de estado del ticket
+# =============================================================================
+# Esta endpoint permite consultar el historial de un ticket (solo administrador).
+# =============================================================================
+# Endpoint: GET /api/tickets/<int:ticket_id>/history/?user_document=<document>
+# Respuestas:
+# - 200: Historial de cambios de estado del ticket obtenido exitosamente
+# - 400: Usuario no encontrado o parámetros inválidos
+# - 403: Usuario no autorizado (solo administradores)
+# - 404: Ticket no encontrado
+# =============================================================================
+    path('tickets/<int:ticket_id>/history/', TicketHistoryAV.as_view(), name='ticket-history-detail'),
     # Consultar timeline de ticket (cliente)
     path('client/tickets/<int:ticket_id>/timeline/', TicketTimelineAV.as_view(), name="ticket-timeline"),
     # Aprobar/rechazar estado de pruebas de un ticket (estado crítico)

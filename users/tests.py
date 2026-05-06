@@ -185,3 +185,55 @@ class UserTests(APITestCase):
         # Verificar respuesta de error
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(response.data['detail'], "Espacio en blanco no permitido")
+
+from django.core import mail
+from django.utils.http import urlsafe_base64_encode
+from django.utils.encoding import force_bytes
+from django.contrib.auth.tokens import PasswordResetTokenGenerator
+
+class PasswordResetTests(APITestCase):
+    def setUp(self):
+        self.user_data = {
+            "email": "testreset@example.com",
+            "password": "OldPassword123!",
+            "document": "9988776655",
+            "role": "CLIENT",
+        }
+        self.user = get_user_model().objects.create_user(**self.user_data)
+    
+    def test_request_password_reset(self):
+        url = '/api/users/auth/password-reset/'
+        data = {'email': self.user_data['email']}
+        
+        response = self.client.post(url, data, format='json')
+        
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn('restablecer tu contraseña', mail.outbox[0].body)
+        
+    def test_confirm_password_reset(self):
+        uid = urlsafe_base64_encode(force_bytes(self.user.pk))
+        token = PasswordResetTokenGenerator().make_token(self.user)
+        
+        url = '/api/users/auth/password-reset/confirm/'
+        data = {
+            'uidb64': uid,
+            'token': token,
+            'new_password': 'NewPassword123!',
+            'new_password_confirm': 'NewPassword123!'
+        }
+        
+        response = self.client.post(url, data, format='json')
+        
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.check_password('NewPassword123!'))
+
+    def test_invalid_email_reset(self):
+        url = '/api/users/auth/password-reset/'
+        data = {'email': 'noexiste@example.com'}
+        
+        response = self.client.post(url, data, format='json')
+        
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(len(mail.outbox), 0)

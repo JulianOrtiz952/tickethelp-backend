@@ -5,8 +5,6 @@ from django.contrib.auth import password_validation
 from django.contrib.auth.hashers import check_password
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework_simplejwt.exceptions import AuthenticationFailed
-from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
-from rest_framework_simplejwt.exceptions import AuthenticationFailed
 import re
 
 User = get_user_model()
@@ -369,73 +367,47 @@ class EmailTokenObtainPairSerializer(TokenObtainPairSerializer):
 
         return data
 
+# =============================================================================
+# Recuperación de Contraseña
+# =============================================================================
+from django.contrib.auth.tokens import PasswordResetTokenGenerator
+from django.utils.http import urlsafe_base64_decode
+from django.utils.encoding import force_str
 
-# =============================================================================
-# HU14A - Login: Serializer personalizado para autenticación JWT
-# =============================================================================
-# Este serializer extiende TokenObtainPairSerializer para manejar la autenticación
-# con email como username y implementar validaciones específicas de la HU14A
-# =============================================================================
+class PasswordResetRequestSerializer(serializers.Serializer):
+    email = serializers.EmailField()
 
-class EmailTokenObtainPairSerializer(TokenObtainPairSerializer):
-    """
-    Serializer personalizado para autenticación JWT con email como username.
-    
-    Implementa los escenarios de la HU14A - Login:
-    - Escenario 1: Inicio de sesión exitoso ✅
-    - Escenario 2: Autenticación por rol ✅  
-    - Escenario 7: Usuario inactivo ✖️
-    - Escenario 12: Contraseña por defecto ✖️
-    """
-    
-    @classmethod
-    def get_token(cls, user):
-        """
-        Personaliza el token JWT con claims adicionales del usuario.
-        """
-        token = super().get_token(user)
-        # Claims personalizados:
-        token['email'] = user.email
-        token['role'] = user.role
-        token['is_active'] = user.is_active
-        token['document'] = user.document
-        return token
-    
+    def validate_email(self, value):
+        if not User.objects.filter(email=value).exists():
+            raise serializers.ValidationError("No existe un usuario con este correo electrónico.")
+        return value
+
+class PasswordResetConfirmSerializer(serializers.Serializer):
+    uidb64 = serializers.CharField(write_only=True)
+    token = serializers.CharField(write_only=True)
+    new_password = serializers.CharField(write_only=True, min_length=8)
+    new_password_confirm = serializers.CharField(write_only=True, min_length=8)
+
     def validate(self, attrs):
-        """
-        Valida las credenciales y aplica las reglas de negocio de la HU14A.
+        if attrs['new_password'] != attrs['new_password_confirm']:
+            raise serializers.ValidationError({"new_password_confirm": "Las contraseñas no coinciden."})
         
-        Args:
-            attrs: Diccionario con las credenciales (email, password)
-            
-        Returns:
-            dict: Datos del token JWT con información del usuario
-            
-        Raises:
-            AuthenticationFailed: Si las credenciales son inválidas, 
-                                cuenta inactiva o debe cambiar contraseña
-        """
-        # Escenario 1 - Inicio de sesión exitoso: Valida las credenciales
-        data = super().validate(attrs)  # Valida email/password contra la BD
+        try:
+            uid = force_str(urlsafe_base64_decode(attrs['uidb64']))
+            user = User.objects.get(pk=uid)
+        except (TypeError, ValueError, OverflowError, User.DoesNotExist):
+            raise serializers.ValidationError({"token": "El enlace de recuperación es inválido."})
         
-        # Obtener el usuario autenticado
-        user = self.user  # El usuario que ha intentado autenticarse
+        if not PasswordResetTokenGenerator().check_token(user, attrs['token']):
+            raise serializers.ValidationError({"token": "El token es inválido o ha expirado."})
         
-        # Escenario 7 - Usuario inactivo ✖️
-        # Verificar si la cuenta está activa antes de permitir el login
-        if not user.is_active:
-            raise AuthenticationFailed("Cuenta inactiva")
+        password_validation.validate_password(attrs['new_password'], user=user)
+        self.user = user
+        return attrs
 
-        # 4) Usuario debe cambiar contraseña (por defecto/temporal)
-        if getattr(user, 'must_change_password', False):
-            raise AuthenticationFailed("Por favor, cambie la contraseña")
+    def save(self):
+        self.user.set_password(self.validated_data['new_password'])
+        self.user.must_change_password = False
+        self.user.save(update_fields=['password', 'must_change_password'])
+        return self.user
 
-        # 5) Enriquecer la respuesta con datos del usuario y su rol
-        data['user'] = {
-            'document': user.document,
-            'email': user.email,
-            'role': user.role,
-            'is_active': user.is_active,
-        }
-
-        return data

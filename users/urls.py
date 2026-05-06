@@ -3,7 +3,8 @@ from .views import (UserViewSet, AdminViewSet, TechnicianViewSet, ClientViewSet,
                     UserUpdateView, ChangePasswordView, ChangePasswordByIdView, 
                     UserUpdateByIdView, get_client_by_document, AdminUpdateUserView, 
                     UserUpdateProfilePictureView, EmailTokenObtainPairView, 
-                    TokenValidationView, TokenUserDataView, AuthChangePasswordView)
+                    TokenValidationView, TokenUserDataView, AuthChangePasswordView,
+                    PasswordResetRequestView, PasswordResetConfirmView)
 from django.urls import path, include
 urlpatterns = [
     # Listar usuarios
@@ -71,4 +72,10 @@ urlpatterns = [
     # =============================================================================
     path('users/auth/validate-token/', TokenValidationView.as_view(), name='token_validation'), # HU14A - Validar token activo
     path('users/auth/user-data/', TokenUserDataView.as_view(), name='token_user_data'), # HU14A - Obtener datos del usuario desde token
+
+    # =============================================================================
+    # Recuperación de Contraseña
+    # =============================================================================
+    path('users/auth/password-reset/', PasswordResetRequestView.as_view(), name='password_reset_request'),
+    path('users/auth/password-reset/confirm/', PasswordResetConfirmView.as_view(), name='password_reset_confirm'),
 ]

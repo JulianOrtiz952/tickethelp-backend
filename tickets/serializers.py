@@ -352,3 +352,20 @@ class TicketAttachmentUploadSerializer(serializers.Serializer):
         )
         return adjunto
 
+
+class TicketHistorySerializer(serializers.ModelSerializer):
+    tecnico_nombre = serializers.CharField(source='tecnico.get_full_name', read_only=True)
+    tecnico_documento = serializers.CharField(source='tecnico.document', read_only=True)
+    tecnico_anterior_nombre = serializers.CharField(source='tecnico_anterior.get_full_name', read_only=True)
+    tecnico_anterior_documento = serializers.CharField(source='tecnico_anterior.document', read_only=True)
+    realizado_por_nombre = serializers.CharField(source='realizado_por.get_full_name', read_only=True)
+    realizado_por_documento = serializers.CharField(source='realizado_por.document', read_only=True)
+
+    class Meta:
+        model = TicketHistory
+        fields = [
+            'id', 'ticket', 'estado', 'estado_anterior', 'tecnico', 'tecnico_nombre', 'tecnico_documento',
+            'tecnico_anterior', 'tecnico_anterior_nombre', 'tecnico_anterior_documento',
+            'accion', 'fecha', 'realizado_por', 'realizado_por_nombre', 'realizado_por_documento', 'datos_ticket'
+        ]
+

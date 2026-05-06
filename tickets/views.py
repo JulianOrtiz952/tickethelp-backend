@@ -5,11 +5,7 @@ from tickets.permissions import IsAdmin, IsAdminOrTechnician, IsClient, IsTechni
 from django.shortcuts import get_object_or_404
 from django.contrib.auth import get_user_model
 from django.utils import timezone
-<<<<<<< HEAD
-=======
 from datetime import timedelta
-import tickets
->>>>>>> 5a011a0 (Fix: arreglado tema de timeline)
 from django.db.models import Q
 import logging
 from tickets.models import Ticket, Estado, StateChangeRequest
@@ -198,8 +194,18 @@ class StateChangeAV(UpdateAPIView):
                     }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
                 
                 estado_anterior = ticket.estado
+                estado_anterior_nombre = estado_anterior.nombre
+                
+                # Marcar que ya se notificó manualmente para evitar duplicación con el signal
+                ticket._notificacion_manual = True
                 ticket.estado = to_state
                 ticket.save(update_fields=['estado'])
+                
+                # Notificar al cliente sobre el cambio de estado
+                try:
+                    NotificationService.enviar_notificacion_estado_cambiado(ticket, estado_anterior_nombre)
+                except Exception as e:
+                    logger.error(f"Error enviando notificación de cambio de estado al cliente: {e}")
                 
                 StateChangeRequest.objects.create(
                     ticket=ticket,

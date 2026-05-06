@@ -344,7 +344,7 @@ def custom_exception_handler(exc, context):
 # de la HU14A - Login, específicamente los escenarios 13-18
 # =============================================================================
 
-class ChangePasswordView(APIView):
+class AuthChangePasswordView(APIView):
     """
     Vista para cambio de contraseña con validaciones específicas de la HU14A.
     

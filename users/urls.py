@@ -1,5 +1,9 @@
 from rest_framework.routers import DefaultRouter
-from .views import UserViewSet, AdminViewSet, TechnicianViewSet, ClientViewSet, UserUpdateView, ChangePasswordView, ChangePasswordByIdView, UserUpdateByIdView, get_client_by_document, AdminUpdateUserView, UserUpdateProfilePictureView, EmailTokenObtainPairView, TokenValidationView, TokenUserDataView
+from .views import (UserViewSet, AdminViewSet, TechnicianViewSet, ClientViewSet, 
+                    UserUpdateView, ChangePasswordView, ChangePasswordByIdView, 
+                    UserUpdateByIdView, get_client_by_document, AdminUpdateUserView, 
+                    UserUpdateProfilePictureView, EmailTokenObtainPairView, 
+                    TokenValidationView, TokenUserDataView, AuthChangePasswordView)
 from django.urls import path, include
 urlpatterns = [
     # Listar usuarios
@@ -56,7 +60,7 @@ urlpatterns = [
     # Endpoint para cambio de contraseña con validaciones específicas
     # Implementa los escenarios 4 y 13-18 de la HU14A - Login
     # =============================================================================
-    path('users/auth/change-password/', ChangePasswordView.as_view(), name='change_password'), # HU14A - Cambio de contraseña
+    path('users/auth/change-password/', AuthChangePasswordView.as_view(), name='change_password'), # HU14A - Cambio de contraseña
 
     # =============================================================================
     # HU14A - Login: Métodos adicionales para manejo de tokens

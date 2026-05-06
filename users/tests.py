@@ -40,7 +40,7 @@ class UserTests(APITestCase):
         self.user = get_user_model().objects.create_user(**self.user_data)
 
         # Si quieres crear un usuario con contraseña temporal
-        self.user.must_change_password = True
+        self.user.must_change_password = False
         self.user.save()
 
         # Obtener el token JWT para pruebas autenticadas

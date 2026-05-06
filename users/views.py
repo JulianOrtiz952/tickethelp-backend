@@ -10,6 +10,11 @@ from tickets.permissions import IsAdminOrTechnicianOrClient
 from django.shortcuts import get_object_or_404
 from django.core.exceptions import ObjectDoesNotExist
 import re
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated
+from rest_framework import status
+import re
 
 from .serializers import (
     UserReadSerializer,
@@ -549,3 +554,49 @@ class TokenUserDataView(APIView):
                 "message": "Error al obtener datos del usuario",
                 "error": str(e)
             }, status=status.HTTP_401_UNAUTHORIZED)
+
+# =============================================================================
+# Recuperación de Contraseña
+# =============================================================================
+from django.core.mail import send_mail
+from django.utils.http import urlsafe_base64_encode
+from django.utils.encoding import force_bytes
+from django.contrib.auth.tokens import PasswordResetTokenGenerator
+from django.conf import settings
+from .serializers import PasswordResetRequestSerializer, PasswordResetConfirmSerializer
+
+class PasswordResetRequestView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        serializer = PasswordResetRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        
+        email = serializer.validated_data['email']
+        user = User.objects.get(email=email)
+        
+        uid = urlsafe_base64_encode(force_bytes(user.pk))
+        token = PasswordResetTokenGenerator().make_token(user)
+        
+        # URL del frontend (asumiendo React en Vercel/Onrender o localhost)
+        frontend_url = getattr(settings, 'FRONTEND_ORIGIN', 'https://tickethelp-frontend.onrender.com')
+        reset_link = f"{frontend_url}/reset-password/{uid}/{token}/"
+        
+        send_mail(
+            subject='Recuperación de Contraseña - TicketHelp',
+            message=f'Hola {user.first_name},\n\nHaz clic en el siguiente enlace para restablecer tu contraseña:\n{reset_link}\n\nSi no solicitaste este cambio, ignora este correo.',
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[user.email],
+            fail_silently=False,
+        )
+        
+        return Response({"detail": "Se ha enviado un correo con las instrucciones para restablecer la contraseña."}, status=status.HTTP_200_OK)
+
+class PasswordResetConfirmView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        serializer = PasswordResetConfirmSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response({"detail": "Contraseña restablecida exitosamente."}, status=status.HTTP_200_OK)

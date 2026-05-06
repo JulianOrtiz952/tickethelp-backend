@@ -370,3 +370,4 @@ class TicketAttachmentUploadSerializer(serializers.Serializer):
             tamano_bytes=file.size,
         )
         return adjunto
+

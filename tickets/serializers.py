@@ -98,8 +98,15 @@ class ChangeTechnicianSerializer(serializers.Serializer):
         return tecnico
 
     def validate(self, attrs):
-        documento = attrs.get('documento_tecnico')
-        if isinstance(documento, list) and len(documento) > 1:
+        tecnico = attrs.get('documento_tecnico')
+        ticket = self.context.get('ticket')
+        
+        if ticket and ticket.tecnico == tecnico:
+            raise serializers.ValidationError({
+                "detail": "No puede asignar el mismo técnico actual"
+            })
+            
+        if isinstance(tecnico, list) and len(tecnico) > 1:
             raise serializers.ValidationError({"documento_tecnico": "Solo se puede seleccionar un técnico."})
         
         return attrs
@@ -370,4 +377,21 @@ class TicketAttachmentUploadSerializer(serializers.Serializer):
             tamano_bytes=file.size,
         )
         return adjunto
+
+
+class TicketHistorySerializer(serializers.ModelSerializer):
+    tecnico_nombre = serializers.CharField(source='tecnico.get_full_name', read_only=True)
+    tecnico_documento = serializers.CharField(source='tecnico.document', read_only=True)
+    tecnico_anterior_nombre = serializers.CharField(source='tecnico_anterior.get_full_name', read_only=True)
+    tecnico_anterior_documento = serializers.CharField(source='tecnico_anterior.document', read_only=True)
+    realizado_por_nombre = serializers.CharField(source='realizado_por.get_full_name', read_only=True)
+    realizado_por_documento = serializers.CharField(source='realizado_por.document', read_only=True)
+
+    class Meta:
+        model = TicketHistory
+        fields = [
+            'id', 'ticket', 'estado', 'estado_anterior', 'tecnico', 'tecnico_nombre', 'tecnico_documento',
+            'tecnico_anterior', 'tecnico_anterior_nombre', 'tecnico_anterior_documento',
+            'accion', 'fecha', 'realizado_por', 'realizado_por_nombre', 'realizado_por_documento', 'datos_ticket'
+        ]
 

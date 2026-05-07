@@ -348,84 +348,38 @@ class AuthChangePasswordView(APIView):
     """
     Vista para cambio de contraseña con validaciones específicas de la HU14A.
     
-    Implementa los escenarios de la HU14A - Login:
-    - Escenario 4: Cambio de contraseña ✅
-    - Escenario 13: Contraseña inválida (muy corta) ✖️
-    - Escenario 14: Contraseña inválida (sin mayúscula) ✖️
-    - Escenario 15: Contraseña inválida (sin minúscula) ✖️
-    - Escenario 16: Contraseña inválida (sin carácter especial) ✖️
-    - Escenario 17: Contraseña inválida (con espacios) ✖️
-    - Escenario 18: Contraseña inválida (vacía) ✖️
+    Implementa:
+    - Validación de contraseña actual (Defecto CB-02)
+    - Validación de fortaleza (longitud, mayúsculas, minúsculas, caracteres especiales)
+    - Evita duplicar la misma contraseña
     
     Endpoint: POST /api/auth/change-password/
-    Body: {"new_password": "nueva_contraseña"}
-    
-    Respuestas:
-    - 200: Contraseña actualizada con éxito
-    - 400: Validaciones de contraseña fallidas
-    - 401: Usuario no autenticado
+    Body: {"current_password": "...", "new_password": "...", "new_password_confirm": "..."}
     """
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
         """
-        Maneja el cambio de contraseña con validaciones de la HU14A.
-        
-        Args:
-            request: Request con new_password
-            
-        Returns:
-            Response: Confirmación de cambio o errores de validación
-            
-        Escenarios implementados:
-        - Escenario 4: Actualiza contraseña y marca must_change_password = False
-        - Escenario 13: Valida longitud mínima de 8 caracteres
-        - Escenario 14: Valida presencia de letra mayúscula
-        - Escenario 15: Valida presencia de letra minúscula
-        - Escenario 16: Valida presencia de carácter especial
-        - Escenario 17: Valida ausencia de espacios en blanco
-        - Escenario 18: Valida que la contraseña no esté vacía
+        Maneja el cambio de contraseña delegando en ChangePasswordSerializer.
         """
+        serializer = ChangePasswordSerializer(
+            data=request.data, 
+            context={'request': request}
+        )
+        # La validación incluye check_password(current) y validate_password(new)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+
+        # Marcar que el usuario ya no debe cambiar la contraseña (si aplica)
         user = request.user
-        new_password = request.data.get("new_password")
+        if getattr(user, 'must_change_password', False):
+            user.must_change_password = False
+            user.save(update_fields=['must_change_password'])
 
-        # Escenario 18 - Contraseña inválida (vacía) ✖️
-        # Validar que la contraseña no esté vacía
-        if not new_password:
-            return Response({"detail": "La contraseña no puede estar vacía"}, status=400)
-        
-        # Escenario 13 - Contraseña inválida (muy corta) ✖️
-        # Validar longitud mínima de 8 caracteres
-        if len(new_password) < 8:
-            return Response({"detail": "Contraseña muy corta"}, status=400)
-        
-        # Escenario 17 - Contraseña inválida (con espacios) ✖️
-        # Validar que no contenga espacios en blanco
-        if " " in new_password:
-            return Response({"detail": "Espacio en blanco no permitido"}, status=400)
-        
-        # Escenario 14 - Contraseña inválida (sin mayúscula) ✖️
-        # Validar presencia de al menos una letra mayúscula
-        if not re.search(r"[A-Z]", new_password):
-            return Response({"detail": "Falta una letra mayúscula"}, status=400)
-        
-        # Escenario 15 - Contraseña inválida (sin minúscula) ✖️
-        # Validar presencia de al menos una letra minúscula
-        if not re.search(r"[a-z]", new_password):
-            return Response({"detail": "Falta una letra minúscula"}, status=400)
-        
-        # Escenario 16 - Contraseña inválida (sin carácter especial) ✖️
-        # Validar presencia de al menos un carácter especial
-        if not re.search(r"[!@#$%^&*(),.?\":{}|<>]", new_password):
-            return Response({"detail": "Falta un caracter especial"}, status=400)
-
-        # Escenario 4 - Cambio de contraseña ✅
-        # Guardar nueva contraseña y marcar que ya no debe cambiarla
-        user.set_password(new_password)
-        user.must_change_password = False  # Usuario ya cambió su contraseña
-        user.save()
-
-        return Response({"detail": "Contraseña actualizada con éxito"}, status=status.HTTP_200_OK)
+        return Response(
+            {"detail": "Contraseña actualizada con éxito"}, 
+            status=status.HTTP_200_OK
+        )
 
 
 # =============================================================================

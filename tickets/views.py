@@ -116,7 +116,10 @@ class ChangeTechnicianAV(UpdateAPIView):
                 'message': 'No se puede modificar un ticket que ya ha sido finalizado.'
             }, status=status.HTTP_400_BAD_REQUEST)
         
-        serializer = self.get_serializer(data=request.data)
+        serializer = self.get_serializer(
+            data=request.data, 
+            context={'ticket': ticket, 'request': request}
+        )
 
         if serializer.is_valid():
             new_technician = serializer.validated_data['documento_tecnico']
@@ -132,30 +135,21 @@ class ChangeTechnicianAV(UpdateAPIView):
             else:
                 usuario_cambio = getattr(request, 'user', None)
 
-            if new_technician != old_technician:
-                ticket.tecnico = new_technician
-                try:
-                    ticket.save()
-                except Exception as e:
-                    logger = __import__('logging').getLogger(__name__)
-                    logger.error(f"Error guardando ticket al cambiar técnico: {e}")
-                    return Response({'error': 'error_saving_ticket', 'message': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-            else:
-                return Response({
-                    'error': 'No se puede asignar el mismo técnico',
-                    'message': 'El técnico actual es el mismo que el nuevo.'
-                }, status=status.HTTP_400_BAD_REQUEST)
+            # El serializer ya validó que sea diferente
+            ticket.tecnico = new_technician
+            try:
+                ticket.save()
+            except Exception as e:
+                logger.error(f"Error guardando ticket al cambiar técnico: {e}")
+                return Response({'error': 'error_saving_ticket', 'message': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
             # Crear entrada en el historial
-            # Escenario 2: Guardar en historial el técnico cambiado con el estado al que llegó
-            # El estado "al que llegó" es el estado actual del ticket (ticket.estado)
-            # El método crear_entrada_historial ya guarda el estado actual en el campo 'estado'
             TicketHistory.crear_entrada_historial(
                 ticket=ticket,
                 accion=f"Cambio de técnico de {old_technician.get_full_name() if old_technician else 'Sin técnico'} a {new_technician.get_full_name()}",
                 realizado_por=usuario_cambio,
                 tecnico_anterior=old_technician,
-                estado_anterior=None  # No hay cambio de estado, solo cambio de técnico
+                estado_anterior=None
             )
 
             return Response({
@@ -168,11 +162,7 @@ class ChangeTechnicianAV(UpdateAPIView):
                 }
             }, status=status.HTTP_200_OK)
         else:
-            # Si no hay cambio de técnico, no es necesario actualizar ni crear historial
-            return Response({
-                'message': 'No hubo cambios en el técnico.',
-                'ticket_id': ticket.pk
-            }, status=status.HTTP_200_OK)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     def get(self, request, *args, **kwargs):
         return Response({

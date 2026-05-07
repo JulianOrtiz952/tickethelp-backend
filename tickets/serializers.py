@@ -98,8 +98,15 @@ class ChangeTechnicianSerializer(serializers.Serializer):
         return tecnico
 
     def validate(self, attrs):
-        documento = attrs.get('documento_tecnico')
-        if isinstance(documento, list) and len(documento) > 1:
+        tecnico = attrs.get('documento_tecnico')
+        ticket = self.context.get('ticket')
+        
+        if ticket and ticket.tecnico == tecnico:
+            raise serializers.ValidationError({
+                "detail": "No puede asignar el mismo técnico actual"
+            })
+            
+        if isinstance(tecnico, list) and len(tecnico) > 1:
             raise serializers.ValidationError({"documento_tecnico": "Solo se puede seleccionar un técnico."})
         
         return attrs

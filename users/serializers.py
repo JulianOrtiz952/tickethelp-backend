@@ -126,6 +126,8 @@ class ChangePasswordSerializer(serializers.Serializer):
             raise serializers.ValidationError({"current_password": "La contraseña actual es incorrecta."})
         if attrs['new_password'] != attrs['new_password_confirm']:
             raise serializers.ValidationError({"new_password_confirm": "Las nuevas contraseñas no coinciden."})
+        if attrs['new_password'] == attrs['current_password']:
+            raise serializers.ValidationError({"new_password": "La nueva contraseña no puede ser igual a la actual."})
         password_validation.validate_password(attrs['new_password'], user=user)
         return attrs
     

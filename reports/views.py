@@ -130,7 +130,19 @@ class TechnicianPerformanceRankingView(APIView):
         from django.db.models import Count, Q
 
         FINAL_STATE_ID = 5
-        LIMIT = int(request.query_params.get('limit', 5))
+        try:
+            limit_param = request.query_params.get('limit', '5')
+            LIMIT = int(limit_param)
+            if LIMIT <= 0:
+                return Response(
+                    {"detail": "El parámetro limit debe ser mayor que cero"}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+        except ValueError:
+            return Response(
+                {"detail": "El parámetro limit debe ser un número entero mayor que cero"}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
         # Técnicos activos con agregados HISTÓRICOS
         qs = (
@@ -183,8 +195,16 @@ class ActiveClientsEvolutionView(APIView):
         year_param = request.query_params.get('year')
         try:
             year = int(year_param) if year_param else timezone.now().year
+            if not (1 <= year <= 9999):
+                return Response(
+                    {"detail": "El parámetro year es inválido"}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
         except ValueError:
-            return Response({"detail": "Parámetro 'year' inválido"}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {"detail": "El parámetro year es inválido"}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
         inicio_anio = datetime(year, 1, 1, 0, 0, 0, 0, tzinfo=timezone.get_current_timezone())
         inicio_anio_siguiente = datetime(year + 1, 1, 1, 0, 0, 0, 0, tzinfo=timezone.get_current_timezone())

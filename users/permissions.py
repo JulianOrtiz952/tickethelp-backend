@@ -1,6 +1,6 @@
 from rest_framework import permissions
 from django.contrib.auth import get_user_model
-from rest_framework.permissions import BasePermission
+from rest_framework.permissions import BasePermission, IsAuthenticated
 
 User = get_user_model()
 
@@ -8,89 +8,76 @@ User = get_user_model()
 class IsAdmin(permissions.BasePermission):
     """
     Permiso personalizado para verificar que el usuario sea administrador.
+    Garantiza respuesta 403 si el rol no coincide.
     """
     def has_permission(self, request, view):
-        return (
+        return bool(
             request.user and 
             request.user.is_authenticated and 
             request.user.role == User.Role.ADMIN
         )
-
 
 class IsTechnician(permissions.BasePermission):
     """
     Permiso personalizado para verificar que el usuario sea técnico.
     """
     def has_permission(self, request, view):
-        return (
+        return bool(
             request.user and 
             request.user.is_authenticated and 
             request.user.role == User.Role.TECH
         )
-
 
 class IsClient(permissions.BasePermission):
     """
     Permiso personalizado para verificar que el usuario sea cliente.
     """
     def has_permission(self, request, view):
-        return (
+        return bool(
             request.user and 
             request.user.is_authenticated and 
             request.user.role == User.Role.CLIENT
         )
 
-
 class IsAdminOrTechnician(permissions.BasePermission):
     """
-    Permiso personalizado para verificar que el usuario sea administrador o técnico.
+    Permiso para administradores o técnicos.
     """
     def has_permission(self, request, view):
-        return (
+        return bool(
             request.user and 
             request.user.is_authenticated and 
             request.user.role in [User.Role.ADMIN, User.Role.TECH]
         )
 
-
-class IsAdminOrOwner(permissions.BasePermission):
+class IsAdminOrClient(permissions.BasePermission):
     """
-    Permiso personalizado para verificar que el usuario sea administrador o el propietario del recurso.
+    Permiso para administradores o clientes.
     """
     def has_permission(self, request, view):
-        return (
+        return bool(
             request.user and 
             request.user.is_authenticated and 
-            (request.user.role == User.Role.ADMIN or 
-             request.user.document == view.kwargs.get('pk'))
+            request.user.role in [User.Role.ADMIN, User.Role.CLIENT]
         )
 
+class IsAdminOrTechnicianOrClient(permissions.BasePermission):
+    """
+    Permiso para cualquier rol autenticado (Admin, Tech o Client).
+    """
+    def has_permission(self, request, view):
+        return bool(
+            request.user and 
+            request.user.is_authenticated and 
+            request.user.role in [User.Role.ADMIN, User.Role.TECH, User.Role.CLIENT]
+        )
 
 class IsOwnerOrAdmin(permissions.BasePermission):
     """
-    Permiso personalizado para verificar que el usuario sea el propietario del recurso o administrador.
+    Verifica que el usuario sea el propietario del recurso o administrador.
+    Utilizado usualmente en has_object_permission.
     """
     def has_object_permission(self, request, view, obj):
-        return (
-            request.user and 
-            request.user.is_authenticated and 
-            (request.user.role == User.Role.ADMIN or 
-             obj == request.user)
-        )
-
-
-class IsAuthenticated(permissions.IsAuthenticated):
-    """
-    Permiso básico de autenticación.
-    """
-    pass
-
-# =============================================================================
-# HU13B - Historial: Permiso para verificar que el usuario sea administrador
-# =============================================================================
-# Este permiso verifica que el usuario sea administrador
-# =============================================================================
-
-class IsAdmin(BasePermission):
-    def has_permission(self, request, view):
-        return request.user.is_authenticated and request.user.role == User.Role.ADMIN
+        if not (request.user and request.user.is_authenticated):
+            return False
+        return request.user.role == User.Role.ADMIN or obj == request.user

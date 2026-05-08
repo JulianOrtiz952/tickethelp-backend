@@ -1,68 +1,13 @@
 from rest_framework import permissions
 from django.contrib.auth import get_user_model
+from users.permissions import (
+    IsAdmin, IsTechnician, IsClient, 
+    IsAdminOrTechnician, IsAdminOrClient, 
+    IsAdminOrTechnicianOrClient, IsAuthenticated
+)
 from .models import Ticket
 
 User = get_user_model()
-
-
-class IsAdmin(permissions.BasePermission):
-    """
-    Permiso personalizado para verificar que el usuario sea administrador.
-    """
-    def has_permission(self, request, view):
-        return (
-            request.user and 
-            request.user.is_authenticated and 
-            request.user.role == User.Role.ADMIN
-        )
-
-
-class IsTechnician(permissions.BasePermission):
-    """
-    Permiso personalizado para verificar que el usuario sea técnico.
-    """
-    def has_permission(self, request, view):
-        return (
-            request.user and 
-            request.user.is_authenticated and 
-            request.user.role == User.Role.TECH
-        )
-
-
-class IsClient(permissions.BasePermission):
-    """
-    Permiso personalizado para verificar que el usuario sea cliente.
-    """
-    def has_permission(self, request, view):
-        return (
-            request.user and 
-            request.user.is_authenticated and 
-            request.user.role == User.Role.CLIENT
-        )
-
-
-class IsAdminOrTechnician(permissions.BasePermission):
-    """
-    Permiso personalizado para verificar que el usuario sea administrador o técnico.
-    """
-    def has_permission(self, request, view):
-        return (
-            request.user and 
-            request.user.is_authenticated and 
-            request.user.role in [User.Role.ADMIN, User.Role.TECH]
-        )
-
-
-class IsAdminOrClient(permissions.BasePermission):
-    """
-    Permiso personalizado para verificar que el usuario sea administrador o cliente.
-    """
-    def has_permission(self, request, view):
-        return (
-            request.user and 
-            request.user.is_authenticated and 
-            request.user.role in [User.Role.ADMIN, User.Role.CLIENT]
-        )
 
 
 class IsTicketOwnerOrAdmin(permissions.BasePermission):
@@ -111,34 +56,17 @@ class IsAssignedTechnicianOrAdmin(permissions.BasePermission):
         return False
 
 
-class IsAuthenticated(permissions.IsAuthenticated):
+class IsAssignedTechnician(permissions.BasePermission):
     """
-    Permiso básico de autenticación.
-    """
-    pass
-
-class IsAdminOrTechnicianOrClient(permissions.BasePermission):
-    """
-    Permiso personalizado para verificar que el usuario sea administrador, técnico o cliente.
-    """
-    def has_permission(self, request, view):
-        return (
-            request.user and 
-            request.user.is_authenticated and 
-            request.user.role in [User.Role.ADMIN, User.Role.TECH, User.Role.CLIENT]
-        )
-
-class IsClientOwnerOrAdmin(permissions.BasePermission):
-    """
-    Permiso para que solo el cliente dueño o un administrador puedan realizar la acción.
+    Solo el técnico asignado al ticket.
     """
     def has_object_permission(self, request, view, obj):
-        if not (request.user and request.user.is_authenticated):
-            return False
-        
-        # Admin total
-        if request.user.role == User.Role.ADMIN:
-            return True
-            
-        # Solo el cliente que es dueño del ticket
-        return request.user.role == User.Role.CLIENT and obj.cliente == request.user
+        return bool(request.user and request.user.is_authenticated and obj.tecnico == request.user)
+
+
+class IsClientOwner(permissions.BasePermission):
+    """
+    Solo el cliente propietario del ticket.
+    """
+    def has_object_permission(self, request, view, obj):
+        return bool(request.user and request.user.is_authenticated and obj.cliente == request.user)

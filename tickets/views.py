@@ -2,7 +2,11 @@ from rest_framework.generics import ListCreateAPIView, RetrieveAPIView, UpdateAP
 from rest_framework.permissions import AllowAny
 from rest_framework import status, serializers
 from rest_framework.response import Response
-from tickets.permissions import IsAdmin, IsAdminOrTechnician, IsClient, IsTechnician, IsAdminOrTechnicianOrClient, IsAuthenticated, IsTicketOwnerOrAdmin
+from tickets.permissions import (
+    IsAdmin, IsAdminOrTechnician, IsClient, IsTechnician, 
+    IsAdminOrTechnicianOrClient, IsAuthenticated, IsTicketOwnerOrAdmin,
+    IsAssignedTechnician, IsClientOwner
+)
 from django.shortcuts import get_object_or_404
 from django.contrib.auth import get_user_model
 from django.utils import timezone
@@ -37,15 +41,8 @@ class TicketAV(ListCreateAPIView):
                 'message': 'Debe crear al menos un técnico activo antes de crear tickets.'
             }, status=status.HTTP_400_BAD_REQUEST)
         
-        # Obtener el usuario que está creando el ticket
-        user_document = request.query_params.get('user_document')
-        if user_document:
-            try:
-                usuario_creador = User.objects.get(document=user_document)
-            except User.DoesNotExist:
-                usuario_creador = None
-        else:
-            usuario_creador = getattr(request, 'user', None)
+        # Obtener el usuario que está creando el ticket (siempre el usuario autenticado)
+        usuario_creador = getattr(request, 'user', None)
         
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -126,14 +123,7 @@ class ChangeTechnicianAV(UpdateAPIView):
             old_technician = ticket.tecnico
             
             # Obtener el usuario que está realizando el cambio
-            user_document = request.query_params.get('user_document')
-            if user_document:
-                try:
-                    usuario_cambio = User.objects.get(document=user_document)
-                except User.DoesNotExist:
-                    usuario_cambio = None
-            else:
-                usuario_cambio = getattr(request, 'user', None)
+            usuario_cambio = getattr(request, 'user', None)
 
             # El serializer ya validó que sea diferente
             ticket.tecnico = new_technician
@@ -188,7 +178,7 @@ class ActiveTechniciansAV(ListAPIView):
 
 
 class StateChangeAV(UpdateAPIView):
-    permission_classes = [IsTechnician]
+    permission_classes = [IsTechnician, IsAssignedTechnician]
     serializer_class = StateChangeSerializer
 
     def get_object(self):
@@ -197,32 +187,10 @@ class StateChangeAV(UpdateAPIView):
     
     
 
-    def _get_user(self, request):
-        user_document = request.query_params.get('user_document')
-        if user_document:
-            try:
-                return User.objects.get(document=user_document)
-            except User.DoesNotExist:
-                return None
-        return getattr(request, 'user', None)
-
     def put(self, request, *args, **kwargs):
         ticket = self.get_object()
-        user = self._get_user(request)
+        user = request.user
 
-        # Validar que el usuario está autenticado y es un técnico
-        if not user or not user.is_authenticated or user.role != User.Role.TECH:
-            return Response({
-                'error': 'No autorizado',
-                'message': 'Debe iniciar sesión como técnico para cambiar el estado de un ticket.'
-            }, status=status.HTTP_403_FORBIDDEN)
-
-        # Validar que el ticket sea del técnico asignado
-        if ticket.tecnico != user:
-            return Response({
-                'error': 'No autorizado',
-                'message': 'Solo el técnico asignado puede solicitar cambios de estado.'
-            }, status=status.HTTP_403_FORBIDDEN)
 
         # Validar que el ticket no esté finalizado
         if ticket.estado.es_final:
@@ -381,27 +349,9 @@ class TestingApprovalAV(UpdateAPIView):
         ticket_id = self.kwargs.get('ticket_id')
         return get_object_or_404(Ticket, pk=ticket_id)
 
-    def _get_user(self, request):
-        user_document = request.query_params.get('user_document')
-        if user_document:
-            try:
-                return User.objects.get(document=user_document)
-            except User.DoesNotExist:
-                return None
-        return getattr(request, 'user', None)
-
     def _process(self, request, *args, **kwargs):
         ticket = self.get_object()
-        user = self._get_user(request)
-
-        if not user or not user.is_authenticated or user.role != User.Role.ADMIN:
-            return Response(
-                {
-                    "error": "No autorizado",
-                    "message": "Debe autenticarse como administrador para aprobar/rechazar pruebas."
-                },
-                status=status.HTTP_403_FORBIDDEN
-            )
+        user = request.user
 
         # Validar que el ticket esté en estado "Pruebas"
         if ticket.estado.codigo != "trial":
@@ -578,30 +528,15 @@ class TicketListView(ListAPIView):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        # Para clientes, usar siempre el usuario autenticado por seguridad
-        if self.request.user.role == User.Role.CLIENT:
-            return Ticket.objects.filter(cliente=self.request.user)
-        
-        # Para admin y técnico, permitir consultar por user_document o usar el usuario autenticado
-        user_document = self.request.query_params.get('user_document')
-        
-        if user_document and user_document.strip():
-            try:
-                user = User.objects.get(document=user_document)
-            except User.DoesNotExist:
-                return Ticket.objects.none()
-        else:
-            # Si no se proporciona user_document, usar el usuario autenticado
-            user = self.request.user
-
-        if user.role == User.Role.TECH:
-            return Ticket.objects.filter(tecnico=user)
-        elif user.role == User.Role.ADMIN:
-            return Ticket.objects.all()
-        elif user.role == User.Role.CLIENT:
-            return Ticket.objects.filter(cliente=user)
-        
-        return Ticket.objects.none()
+        user = self.request.user
+        role_filters = {
+            User.Role.ADMIN: Q(),
+            User.Role.TECH: Q(tecnico=user),
+            User.Role.CLIENT: Q(cliente=user),
+        }
+        if user.role not in role_filters:
+            return Ticket.objects.none()
+        return Ticket.objects.filter(role_filters[user.role])
 
     def list(self, request, *args, **kwargs):
         queryset = self.get_queryset()
@@ -631,7 +566,7 @@ class TicketHistoryAV(RetrieveAPIView):
     Solo accesible para administradores.
     """
     serializer_class = TicketHistorySerializer
-    permission_classes = [AllowAny]  # Temporal, cambiar a IsAdminUser cuando haya autenticación
+    permission_classes = [IsAdmin]
     
     def get_queryset(self):
         ticket_id = self.kwargs.get('ticket_id')
@@ -644,30 +579,6 @@ class TicketHistoryAV(RetrieveAPIView):
         
         # Validar que el ticket existe
         ticket = get_object_or_404(Ticket, pk=ticket_id)
-        
-        # Validar que el usuario es administrador
-        user_document = self.request.query_params.get('user_document')
-        if user_document:
-            try:
-                user = User.objects.get(document=user_document)
-            except User.DoesNotExist:
-                return Response({
-                    'error': 'Usuario no encontrado',
-                    'message': 'El documento de usuario proporcionado no existe'
-                }, status=status.HTTP_400_BAD_REQUEST)
-        else:
-            user = getattr(self.request, 'user', None)
-            if not user or not user.is_authenticated:
-                return Response({
-                    'error': 'Usuario requerido',
-                    'message': 'Debe proporcionar user_document como parámetro de consulta'
-                }, status=status.HTTP_400_BAD_REQUEST)
-        
-        if user.role != User.Role.ADMIN:
-            return Response({
-                'error': 'No autorizado',
-                'message': 'Solo los administradores pueden consultar el historial de tickets'
-            }, status=status.HTTP_403_FORBIDDEN)
         
         # Retornar el queryset completo (no un objeto individual)
         return self.get_queryset()
@@ -695,26 +606,16 @@ class TicketHistoryAV(RetrieveAPIView):
             'historial': serializer.data
         }, status=status.HTTP_200_OK)
 class TicketTimelineAV(RetrieveAPIView):
-    permission_classes = [IsClient]
+    permission_classes = [IsClient, IsClientOwner]
     serializer_class = TicketTimelineSerializer
 
     def get_object(self):
         return get_object_or_404(Ticket, pk=self.kwargs.get('ticket_id'))
 
     def retrieve(self, request, *args, **kwargs):
-        user = getattr(request, 'user', None)
-        if not user or not user.is_authenticated or user.role != User.Role.CLIENT:
-            return Response({
-                'error': 'No autenticado',
-                'message': 'Debe autenticarse como cliente para consultar el timeline de tickets.'
-            }, status=status.HTTP_401_UNAUTHORIZED)
-
+        user = request.user
         ticket = self.get_object()
-        if ticket.cliente != user:
-            return Response({
-                'error': 'Sin permisos',
-                'message': 'El ticket no pertenece al cliente.'
-            }, status=status.HTTP_403_FORBIDDEN)
+        
 
         return Response({
             'ticket_id': ticket.pk,
@@ -942,13 +843,7 @@ class TicketCancelAV(UpdateAPIView):
 
     def put(self, request, *args, **kwargs):
         ticket = self.get_object()
-        user = self._get_user(request)
-
-        if not user or not user.is_authenticated:
-            return Response({
-                'error': 'No autenticado',
-                'message': 'Debe iniciar sesión para realizar esta acción.'
-            }, status=status.HTTP_401_UNAUTHORIZED)
+        user = request.user
 
         # Solo se permite cancelar si el ticket está 'open' o 'diagnosis'
         estados_permitidos = ['open', 'diagnosis']
@@ -1001,39 +896,25 @@ class TicketAttachmentAV(ListCreateAPIView):
     - El cliente dueño, el técnico asignado y el administrador pueden ver la lista (GET).
     - El ticket no debe estar en estado final para permitir subidas.
     """
-    permission_classes = [IsAuthenticated]
-    serializer_class = TicketAttachmentUploadSerializer
+    def get_permissions(self):
+        if self.request.method == 'POST':
+            return [IsAdmin()]
+        return [IsTicketOwnerOrAdmin()]
 
     def _get_ticket(self):
         return get_object_or_404(Ticket, pk=self.kwargs.get('ticket_id'))
 
-    def _check_read_permission(self, user, ticket):
-        """Permite leer al cliente dueño, técnico asignado y admin."""
-        if user.role == User.Role.ADMIN:
-            return True
-        if user.role == User.Role.TECH and ticket.tecnico_id == user.pk:
-            return True
-        if user.role == User.Role.CLIENT and ticket.cliente_id == user.pk:
-            return True
-        return False
-
-    def _check_upload_permission(self, user, ticket):
-        """Solo el administrador puede subir archivos."""
-        return user.role == User.Role.ADMIN
-
+    def get_object(self):
+        obj = self._get_ticket()
+        self.check_object_permissions(self.request, obj)
+        return obj
     def get_queryset(self):
         ticket = self._get_ticket()
         return TicketAttachment.objects.filter(ticket=ticket).select_related('subido_por')
 
     def list(self, request, *args, **kwargs):
-        ticket = self._get_ticket()
+        ticket = self.get_object() # Valida permisos de objeto
         user = request.user
-
-        if not user.is_authenticated or not self._check_read_permission(user, ticket):
-            return Response({
-                'error': 'No autorizado',
-                'message': 'No tiene permiso para ver los adjuntos de este ticket.'
-            }, status=status.HTTP_403_FORBIDDEN)
 
         queryset = self.get_queryset()
         serializer = TicketAttachmentListSerializer(queryset, many=True, context={'request': request})
@@ -1045,14 +926,8 @@ class TicketAttachmentAV(ListCreateAPIView):
         }, status=status.HTTP_200_OK)
 
     def create(self, request, *args, **kwargs):
-        ticket = self._get_ticket()
+        ticket = self.get_object() # Valida permisos de objeto
         user = request.user
-
-        if not user.is_authenticated or not self._check_upload_permission(user, ticket):
-            return Response({
-                'error': 'No autorizado',
-                'message': 'Solo el administrador puede adjuntar archivos a los tickets.'
-            }, status=status.HTTP_403_FORBIDDEN)
 
         # No se puede adjuntar a un ticket finalizado o cancelado
         if ticket.estado.es_final:

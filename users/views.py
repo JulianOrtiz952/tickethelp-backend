@@ -1,19 +1,12 @@
 # users/views.py
 from django.contrib.auth import get_user_model
-from rest_framework import viewsets, permissions, status
+from rest_framework import viewsets, permissions, status, generics
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.response import Response
-from rest_framework import generics
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
-from tickets.permissions import IsAdminOrTechnicianOrClient
 from django.shortcuts import get_object_or_404
 from django.core.exceptions import ObjectDoesNotExist
-import re
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
-from rest_framework import status
 import re
 
 from .serializers import (
@@ -35,10 +28,7 @@ from rest_framework.views import exception_handler
 from rest_framework_simplejwt.exceptions import TokenError, InvalidToken
 User = get_user_model()
 
-class IsAdmin(permissions.BasePermission):
-    def has_permission(self, request, view) -> bool:
-        user = request.user
-        return bool(user and user.is_authenticated and (getattr(user, 'role', None) == 'ADMIN' or user.is_superuser))
+from .permissions import IsAdmin, IsAdminOrTechnicianOrClient, IsAdminOrTechnician
 
 # Maneja las vistas para los usuarios
 class UserViewSet(viewsets.ModelViewSet):
@@ -212,7 +202,6 @@ class ChangePasswordByIdView(generics.GenericAPIView):
     
 # Función para consultar cliente por documento con manejo de error personalizado
 @api_view(['GET'])
-@permission_classes([IsAdminOrTechnicianOrClient])
 @permission_classes([IsAdmin])
 def get_client_by_document(request, document):
     """

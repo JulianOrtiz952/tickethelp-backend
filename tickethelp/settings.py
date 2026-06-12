@@ -3,23 +3,32 @@ from pathlib import Path
 import dj_database_url
 from dotenv import load_dotenv
 
-# Cargar variables de entorno desde .env
-load_dotenv()
-
 # -----------------------------
 # BASE CONFIG
 # -----------------------------
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+# Cargar variables de entorno desde .env
+load_dotenv(BASE_DIR / ".env")
+
 SECRET_KEY = os.getenv("SECRET_KEY", "dev-secret")  # En prod usar env
 DEBUG = os.getenv("DEBUG", "True") == "True"
 
-ALLOWED_HOSTS = ["*"]
+# Cargar ALLOWED_HOSTS desde el entorno o fallback
+allowed_hosts_env = os.getenv("ALLOWED_HOSTS")
+if allowed_hosts_env:
+    ALLOWED_HOSTS = [host.strip() for host in allowed_hosts_env.split(",") if host.strip()]
+else:
+    ALLOWED_HOSTS = ["*"]
 
 # Para CSRF en producción (Render, Railway, etc.)
-CSRF_TRUSTED_ORIGINS = [
-    os.getenv("CSRF_TRUSTED_ORIGIN", "https://tickethelp-frontend.onrender.com",)
-]
+csrf_trusted_origins_env = os.getenv("CSRF_TRUSTED_ORIGINS")
+if csrf_trusted_origins_env:
+    CSRF_TRUSTED_ORIGINS = [origin.strip() for origin in csrf_trusted_origins_env.split(",") if origin.strip()]
+else:
+    CSRF_TRUSTED_ORIGINS = [
+        "https://tickethelp-frontend.onrender.com"
+    ]
 
 AUTH_USER_MODEL = "users.User"
 
@@ -92,12 +101,19 @@ WSGI_APPLICATION = "tickethelp.wsgi.application"
 # -----------------------------
 # BASE DE DATOS
 # -----------------------------
-DATABASES = {
-    "default": dj_database_url.config(
-        default=os.getenv("DATABASE_URL", f"sqlite:///{BASE_DIR / 'db.sqlite3'}"),
-        conn_max_age=600,
-    )
-}
+DATABASE_URL = os.getenv("DATABASE_URL")
+
+if DATABASE_URL:
+    DATABASES = {
+        "default": dj_database_url.parse(DATABASE_URL, conn_max_age=600)
+    }
+else:
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.sqlite3",
+            "NAME": BASE_DIR / "db.sqlite3",
+        }
+    }
 
 # -----------------------------
 # PASSWORDS
@@ -198,15 +214,21 @@ REST_FRAMEWORK = {
 # -----------------------------
 # CORS
 # -----------------------------
-FRONTEND_ORIGIN = os.getenv(
-    "FRONTEND_ORIGIN",
-    "https://tickethelp-frontend.onrender.com",  # valor por defecto en prod
-)
-CORS_ALLOWED_ORIGINS = [
-    FRONTEND_ORIGIN,
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-]
+cors_origins_env = os.getenv("CORS_ALLOWED_ORIGINS")
+if cors_origins_env:
+    CORS_ALLOWED_ORIGINS = [origin.strip() for origin in cors_origins_env.split(",") if origin.strip()]
+else:
+    FRONTEND_ORIGIN = os.getenv(
+        "FRONTEND_ORIGIN",
+        "https://tickethelp-frontend.onrender.com",  # valor por defecto en prod
+    )
+    CORS_ALLOWED_ORIGINS = [
+        FRONTEND_ORIGIN,
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:5174",
+        "http://127.0.0.1:5174",
+    ]
 CORS_ALLOW_CREDENTIALS = True
 
 # -----------------------------

@@ -1,4 +1,15 @@
-# Ticket-Help - Backend (Django REST Framework)
+# Ticket-Help | Technical Support API
+
+Academic team project for tracking repair requests. The Django REST Framework API handles ticket creation, technician assignment, status changes, history, attachments, notifications and reporting.
+
+[Frontend](https://github.com/JulianOrtiz952/tickethelp-frontend) · [Ticket routes](tickets/urls.py) · [Deployment notes](README_DEPLOY.md)
+
+## Local verification
+
+For local verification, run `python manage.py check` and `python manage.py test` against development settings. Use a fresh local database and locally generated credentials.
+
+## Project guide
+
 
 Este es el repositorio del backend para **Ticket-Help**, un sistema de gestión de requerimientos y soporte técnico diseñado para digitalizar y optimizar la atención de equipos. La API está construida con Django REST Framework y proporciona una base sólida, segura y escalable para las operaciones del sistema.
 
